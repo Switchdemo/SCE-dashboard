@@ -1272,8 +1272,20 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 function unitName(uid) { return "Unit " + uid.slice(-4); }
 
 const DEVICES = [
-  { id: "device0", uid: "dev:PLACEHOLDER0001" },
-  { id: "device1", uid: "dev:PLACEHOLDER0002" },
+  { id: "device0",  uid: "dev:868032061567966" },
+  { id: "device1",  uid: "dev:868032061450171" },
+  { id: "device2",  uid: "dev:868032061567743" },
+  { id: "device3",  uid: "dev:868032061440040" },
+  { id: "device4",  uid: "dev:860322060775969" },
+  { id: "device5",  uid: "dev:868032061596411" },
+  { id: "device6",  uid: "dev:860322060777460" },
+  { id: "device7",  uid: "dev:860322060777486" },
+  { id: "device8",  uid: "dev:860322060839468" },
+  { id: "device9",  uid: "dev:860322060799522" },
+  { id: "device10", uid: "dev:860322060777247" },
+  { id: "device11", uid: "dev:868032061497289" },
+  { id: "device12", uid: "dev:860322060775878" },
+  { id: "device13", uid: "dev:868032061596023" },
 ].map(d => ({ ...d, name: unitName(d.uid) }));
 
 const COMMANDS = {
