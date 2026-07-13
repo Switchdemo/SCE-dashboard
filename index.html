@@ -1011,6 +1011,85 @@
         </div>
       </div>
 
+      <!-- DR Dispatch Configuration -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">⚙️ DR Dispatch Configuration</div>
+          <button class="queue-refresh" onclick="oadrSaveDispatchConfig()" style="color:var(--green-dark);border-color:var(--green);">💾 Save</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:14px;">
+          Configure which device group receives the load control command when SCE sends a DR event at each signal level.
+          These settings are saved to Supabase and read by the worker when an event is received.
+        </div>
+
+        <!-- Level mapping table -->
+        <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center;margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;padding:0 4px;">Signal Level</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;">Target Devices</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;">LC Action</div>
+
+          <!-- Level 0 — Normal -->
+          <div style="padding:8px 10px;background:var(--green-bg);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:12px;font-weight:700;color:var(--green-dark);">L0</div>
+            <div style="font-size:10px;color:var(--green-dark);">Normal</div>
+          </div>
+          <select id="oadr-target-l0" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all">All Devices</option>
+            <option value="none">None (ignore)</option>
+          </select>
+          <select id="oadr-action-l0" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all_on">Restore (All On)</option>
+            <option value="all_off">Shed (All Off)</option>
+          </select>
+
+          <!-- Level 1 — Moderate -->
+          <div style="padding:8px 10px;background:rgba(245,158,11,0.1);border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:12px;font-weight:700;color:var(--amber);">L1</div>
+            <div style="font-size:10px;color:var(--amber);">Moderate</div>
+          </div>
+          <select id="oadr-target-l1" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all">All Devices</option>
+            <option value="none">None (ignore)</option>
+          </select>
+          <select id="oadr-action-l1" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all_off">Shed (All Off)</option>
+            <option value="all_on">Restore (All On)</option>
+          </select>
+
+          <!-- Level 2 — High -->
+          <div style="padding:8px 10px;background:#FEF2F2;border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:12px;font-weight:700;color:var(--red);">L2</div>
+            <div style="font-size:10px;color:var(--red);">High</div>
+          </div>
+          <select id="oadr-target-l2" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all">All Devices</option>
+            <option value="none">None (ignore)</option>
+          </select>
+          <select id="oadr-action-l2" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all_off">Shed (All Off)</option>
+            <option value="all_on">Restore (All On)</option>
+          </select>
+
+          <!-- Level 3 — Special -->
+          <div style="padding:8px 10px;background:#FEF2F2;border-radius:var(--radius-sm);text-align:center;">
+            <div style="font-size:12px;font-weight:700;color:var(--red);">L3</div>
+            <div style="font-size:10px;color:var(--red);">Special</div>
+          </div>
+          <select id="oadr-target-l3" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all">All Devices</option>
+            <option value="none">None (ignore)</option>
+          </select>
+          <select id="oadr-action-l3" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+            <option value="all_off">Shed (All Off)</option>
+            <option value="all_on">Restore (All On)</option>
+          </select>
+        </div>
+
+        <div style="font-size:11px;color:var(--text-hint);padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);">
+          ⓘ Group options load from the Groups tab. Changes take effect immediately on the next incoming VTN event.
+        </div>
+      </div>
+
       <!-- Opt-Out -->
       <div class="sched-card">
         <div class="sched-card-header">
@@ -5810,6 +5889,7 @@ let _oadrActiveEvent  = null;
 function initOADRTab() {
   loadOADREvents();
   oadrCheckStatus();
+  oadrLoadDispatchConfig();
   oadrSetPollInterval(document.getElementById('oadr-poll-interval')?.value || '5');
 }
 
@@ -6035,12 +6115,63 @@ async function loadOADRSummaryCard() {
   }
 }
 
-function startOADRPoller() {
-  loadOADRSummaryCard();
-  if (_oadrPollInterval) clearInterval(_oadrPollInterval);
-  _oadrPollInterval = setInterval(() => {
-    loadOADRSummaryCard();
-  }, 5 * 60 * 1000);
+async function oadrLoadDispatchConfig() {
+  // Populate group options in all level selectors
+  try {
+    const groups = await supabaseGet('device_groups?order=group_number');
+    const uniqueGroups = {};
+    if (Array.isArray(groups)) {
+      groups.forEach(g => {
+        if (!uniqueGroups[g.group_number]) uniqueGroups[g.group_number] = g.group_name || `Group ${g.group_number}`;
+      });
+    }
+    const groupOptions = Object.entries(uniqueGroups)
+      .map(([num, name]) => `<option value="group_${num}">${name}</option>`)
+      .join('');
+    const baseOptions = `<option value="all">All Devices</option>${groupOptions}<option value="none">None (ignore)</option>`;
+    [0,1,2,3].forEach(l => {
+      const sel = document.getElementById(`oadr-target-l${l}`);
+      if (sel) sel.innerHTML = baseOptions;
+    });
+  } catch(e) {}
+
+  // Load saved config from Supabase
+  try {
+    const rows = await supabaseGet('program_settings?setting_key=eq.oadr_dispatch_config&select=setting_value');
+    if (rows?.[0]?.setting_value) {
+      const cfg = JSON.parse(rows[0].setting_value);
+      [0,1,2,3].forEach(l => {
+        const targetSel = document.getElementById(`oadr-target-l${l}`);
+        const actionSel = document.getElementById(`oadr-action-l${l}`);
+        if (targetSel && cfg[`l${l}_target`]) targetSel.value = cfg[`l${l}_target`];
+        if (actionSel && cfg[`l${l}_action`]) actionSel.value = cfg[`l${l}_action`];
+      });
+    }
+  } catch(e) {}
+}
+
+async function oadrSaveDispatchConfig() {
+  const cfg = {};
+  [0,1,2,3].forEach(l => {
+    cfg[`l${l}_target`] = document.getElementById(`oadr-target-l${l}`)?.value || 'all';
+    cfg[`l${l}_action`] = document.getElementById(`oadr-action-l${l}`)?.value || 'all_off';
+  });
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/program_settings?on_conflict=setting_key`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ setting_key: 'oadr_dispatch_config', setting_value: JSON.stringify(cfg) })
+    });
+    setStatus('success', '✅ Dispatch configuration saved');
+    oadrLog('Dispatch config saved — takes effect on next VTN event');
+  } catch(e) {
+    setStatus('error', `Failed to save config: ${e.message}`);
+  }
 }
 
 </script>
