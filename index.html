@@ -938,47 +938,176 @@
         </div>
         <div style="display:flex;gap:8px;">
           <span id="oadr-status-badge" style="padding:5px 14px;border-radius:12px;font-size:12px;font-weight:600;background:var(--surface2);color:var(--text-hint);">● Unknown</span>
-          <button class="queue-refresh" onclick="oadrCheckStatus()">🔄 Check Status</button>
+          <button class="queue-refresh" onclick="testVTNConnection()">🔌 Test Connection</button>
+          <button class="queue-refresh" onclick="oadrPollNow()">📡 Poll VTN</button>
         </div>
       </div>
 
-      <!-- Connection Info -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-        <div class="sched-card">
-          <div class="sched-card-header" style="margin-bottom:12px;"><div class="sched-card-title">VEN Configuration</div></div>
-          <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);">
-              <span style="color:var(--text-hint);">VEN ID</span>
-              <span style="font-weight:700;font-family:monospace;" id="oadr-cfg-ven-id">E545300JH</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);">
-              <span style="color:var(--text-hint);">VTN URL</span>
-              <span style="font-size:10px;font-family:monospace;color:var(--text-secondary);" id="oadr-cfg-vtn-url">sce2vtn.openadr.com</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:0.5px solid var(--border);">
-              <span style="color:var(--text-hint);">Certificate</span>
-              <span style="font-weight:600;color:var(--green-dark);" id="oadr-cfg-cert">E545300JH — valid to 7/1/2031</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;">
-              <span style="color:var(--text-hint);">Program</span>
-              <span style="font-weight:600;" id="oadr-cfg-program">SCE DRAS</span>
-            </div>
+      <!-- VTN Connection Config -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">VTN Connection</div>
+          <div style="display:flex;gap:8px;">
+            <button class="queue-refresh" onclick="testVTNConnection()">Test Connection</button>
+            <button class="queue-refresh" onclick="saveVTNConfig()" style="color:var(--green-dark);border-color:var(--green);">Save</button>
           </div>
-          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="queue-refresh" onclick="oadrPollNow()" style="flex:1;">📡 Poll VTN</button>
-            <button class="queue-refresh" onclick="oadrRegister()" style="flex:1;">📋 Register VEN</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">VTN ID</label>
+            <input type="text" id="oadr-vtn-id" placeholder="VTN identifier from utility" value="SCE_DRAS"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;" />
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">VEN ID</label>
+            <input type="text" id="oadr-ven-id" placeholder="Your VEN identifier" value="E545300JH"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;" />
+          </div>
+          <div style="grid-column:1/-1;">
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">VTN URL</label>
+            <input type="url" id="oadr-vtn-url" value="https://sce2vtn.openadr.com/bvtn/OpenADR2/Simple/2.0b"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;" />
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Transport</label>
+            <select id="oadr-transport" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+              <option value="soap">SOAP/HTTP (XML)</option>
+              <option value="rest">REST/HTTP (EiXML)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Registration ID</label>
+            <input type="text" id="oadr-reg-id" placeholder="Assigned after registration"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;" />
           </div>
         </div>
 
-        <div class="sched-card">
-          <div class="sched-card-header" style="margin-bottom:12px;"><div class="sched-card-title">Current Event Status</div></div>
-          <div id="oadr-current-event">
-            <div class="sched-empty">No active OpenADR event.</div>
+        <!-- Authentication -->
+        <div style="margin-top:14px;padding-top:14px;border-top:0.5px solid var(--border);">
+          <div style="font-size:10px;font-weight:600;color:var(--text-hint);text-transform:uppercase;letter-spacing:.06em;font-family:monospace;margin-bottom:10px;">Authentication</div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;" id="oadr-auth-mode-row">
+            <button class="oadr-auth-btn" data-mode="none"   onclick="selectOADRAuthMode('none',this)"   style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border-md);background:var(--surface2);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;">Registration ID Only</button>
+            <button class="oadr-auth-btn" data-mode="apikey" onclick="selectOADRAuthMode('apikey',this)" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border-md);background:var(--surface2);color:var(--text-secondary);font-size:11px;font-weight:600;cursor:pointer;">API Key</button>
+            <button class="oadr-auth-btn active" data-mode="mtls" onclick="selectOADRAuthMode('mtls',this)" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green);background:var(--green-bg);color:var(--green-dark);font-size:11px;font-weight:600;cursor:pointer;">🔒 mTLS Certificate</button>
+          </div>
+          <div id="oadr-auth-apikey" style="display:none;">
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:4px;">API Key / Bearer Token</label>
+            <input type="password" id="oadr-api-key" placeholder="Bearer token or API key"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;font-family:monospace;" />
+          </div>
+          <div id="oadr-auth-mtls" style="display:block;">
+            <div style="background:var(--surface2);border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px;">
+              <div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:8px;">🔒 mTLS Certificate Status</div>
+              <div id="oadr-mtls-status-row" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                <div id="oadr-mtls-indicator" style="width:10px;height:10px;border-radius:50%;background:var(--green-dark);flex-shrink:0;"></div>
+                <div id="oadr-mtls-status-text" style="font-size:12px;color:var(--green-dark);">Certificate: CN=E545300JH — valid to 7/1/2031</div>
+              </div>
+              <div>
+                <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:4px;">Cloudflare Certificate Binding Name</label>
+                <div style="display:flex;gap:8px;">
+                  <input type="text" id="oadr-mtls-cert-id" value="openadr-ven-cert" placeholder="openadr-ven-cert"
+                    style="flex:1;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;font-family:monospace;" />
+                  <button class="queue-refresh" onclick="verifyMTLSCert()">Verify</button>
+                </div>
+                <div id="oadr-mtls-cert-status" style="font-size:11px;margin-top:4px;color:var(--text-hint);"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="oadr-config-status" style="font-size:11px;margin-top:8px;display:none;"></div>
+      </div>
+
+      <!-- VEN Endpoints -->
+      <div class="sched-card">
+        <div class="sched-card-header"><div class="sched-card-title">Your VEN Endpoint URLs</div></div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Give these URLs to the SCE DRAS administrator so they can push events to your VEN:</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;">
+            <div style="font-size:10px;color:var(--text-hint);margin-bottom:3px;">Event Endpoint (VTN → VEN push)</div>
+            <code style="font-size:12px;color:var(--blue-dark);" id="oadr-endpoint-event"></code>
+          </div>
+          <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;">
+            <div style="font-size:10px;color:var(--text-hint);margin-bottom:3px;">Cancel Endpoint</div>
+            <code style="font-size:12px;color:var(--blue-dark);" id="oadr-endpoint-cancel"></code>
+          </div>
+          <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;">
+            <div style="font-size:10px;color:var(--text-hint);margin-bottom:3px;">Report Pull Endpoint (VTN pulls telemetry)</div>
+            <code style="font-size:12px;color:var(--blue-dark);" id="oadr-endpoint-report"></code>
           </div>
         </div>
       </div>
 
-      <!-- Poll Controls -->
+      <!-- Signal Mapping -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">Signal → Strategy Mapping</div>
+          <button class="queue-refresh" onclick="saveMappings()">Save Mappings</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px;">Configure how OpenADR SIMPLE signal levels map to load control strategies.</div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr>
+              <th style="text-align:left;padding:8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Signal Level</th>
+              <th style="text-align:left;padding:8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Description</th>
+              <th style="text-align:left;padding:8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">LC Strategy #</th>
+              <th style="text-align:left;padding:8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Mode</th>
+              <th style="text-align:left;padding:8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Control %</th>
+            </tr></thead>
+            <tbody id="oadr-mapping-table"></tbody>
+          </table>
+        </div>
+        <div id="oadr-mapping-status" style="font-size:11px;margin-top:8px;display:none;"></div>
+      </div>
+
+      <!-- DR Dispatch Config (Group targeting) -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">⚙️ DR Dispatch Configuration</div>
+          <button class="queue-refresh" onclick="oadrSaveDispatchConfig()" style="color:var(--green-dark);border-color:var(--green);">💾 Save</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:14px;">Configure which device group receives the load control command at each DR signal level.</div>
+        <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center;margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;padding:0 4px;">Level</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;">Target Devices</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;">LC Action</div>
+          <div style="padding:8px 10px;background:var(--green-bg);border-radius:var(--radius-sm);text-align:center;"><div style="font-size:12px;font-weight:700;color:var(--green-dark);">L0</div><div style="font-size:10px;color:var(--green-dark);">Normal</div></div>
+          <select id="oadr-target-l0" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all">All Devices</option></select>
+          <select id="oadr-action-l0" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all_on">Restore (All On)</option><option value="all_off">Shed (All Off)</option></select>
+          <div style="padding:8px 10px;background:rgba(245,158,11,0.1);border-radius:var(--radius-sm);text-align:center;"><div style="font-size:12px;font-weight:700;color:var(--amber);">L1</div><div style="font-size:10px;color:var(--amber);">Moderate</div></div>
+          <select id="oadr-target-l1" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all">All Devices</option></select>
+          <select id="oadr-action-l1" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all_off">Shed (All Off)</option><option value="all_on">Restore (All On)</option></select>
+          <div style="padding:8px 10px;background:#FEF2F2;border-radius:var(--radius-sm);text-align:center;"><div style="font-size:12px;font-weight:700;color:var(--red);">L2</div><div style="font-size:10px;color:var(--red);">High</div></div>
+          <select id="oadr-target-l2" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all">All Devices</option></select>
+          <select id="oadr-action-l2" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all_off">Shed (All Off)</option><option value="all_on">Restore (All On)</option></select>
+          <div style="padding:8px 10px;background:#FEF2F2;border-radius:var(--radius-sm);text-align:center;"><div style="font-size:12px;font-weight:700;color:var(--red);">L3</div><div style="font-size:10px;color:var(--red);">Special</div></div>
+          <select id="oadr-target-l3" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all">All Devices</option></select>
+          <select id="oadr-action-l3" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;"><option value="all_off">Shed (All Off)</option><option value="all_on">Restore (All On)</option></select>
+        </div>
+        <div style="font-size:11px;color:var(--text-hint);padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);">ⓘ Group options load from the Groups tab. Changes take effect on the next incoming VTN event.</div>
+      </div>
+
+      <!-- DR Device Configuration -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">DR Device Configuration</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button class="queue-refresh" onclick="loadDRConfig()">Refresh</button>
+            <button class="queue-refresh" style="color:var(--green-dark);border-color:var(--green);" onclick="saveAllDRConfig()">Save All</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px;">Configure which devices participate in OpenADR DR and how each relay responds to shed signals.</div>
+        <div style="background:var(--surface2);border:0.5px solid var(--border-md);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="font-size:11px;font-weight:600;color:var(--text-secondary);">Set All Devices:</span>
+          <button class="queue-refresh" onclick="drSetAllMode('bas_di')" style="font-size:11px;">🏢 All → BAS Mode</button>
+          <button class="queue-refresh" onclick="drSetAllMode('direct_load')" style="font-size:11px;">🔌 All → Direct Load</button>
+          <div style="width:1px;height:18px;background:var(--border-md);"></div>
+          <button class="queue-refresh" onclick="drSetAllVEN(true)" style="font-size:11px;color:var(--green-dark);border-color:var(--green);">Enable All as VEN Resource</button>
+          <button class="queue-refresh" onclick="drSetAllVEN(false)" style="font-size:11px;color:var(--red);border-color:var(--red);">Disable All</button>
+        </div>
+        <div id="dr-device-config-list"><div class="sched-empty">Loading device DR configuration...</div></div>
+      </div>
+
+      <!-- VTN Polling -->
       <div class="sched-card">
         <div class="sched-card-header">
           <div class="sched-card-title">VTN Polling</div>
@@ -992,12 +1121,7 @@
             </select>
           </div>
         </div>
-        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px;">
-          The VEN polls the SCE VTN for pending demand response events. When an event is received it is automatically dispatched to all enrolled devices.
-        </div>
-        <div id="oadr-poll-log" style="font-family:monospace;font-size:10px;color:var(--text-hint);background:var(--surface2);border-radius:var(--radius-sm);padding:8px;max-height:120px;overflow-y:auto;">
-          Poll log will appear here...
-        </div>
+        <div id="oadr-poll-log" style="font-family:monospace;font-size:10px;color:var(--text-hint);background:var(--surface2);border-radius:var(--radius-sm);padding:8px;max-height:120px;overflow-y:auto;">Poll log will appear here...</div>
       </div>
 
       <!-- Event History -->
@@ -1006,102 +1130,50 @@
           <div class="sched-card-title">OpenADR Event History</div>
           <button class="queue-refresh" onclick="loadOADREvents()">🔄 Refresh</button>
         </div>
-        <div id="oadr-event-history">
-          <div class="sched-empty">Loading...</div>
-        </div>
+        <div id="oadr-event-history"><div class="sched-empty">Loading...</div></div>
       </div>
 
-      <!-- DR Dispatch Configuration -->
+      <!-- Current Event -->
       <div class="sched-card">
         <div class="sched-card-header">
-          <div class="sched-card-title">⚙️ DR Dispatch Configuration</div>
-          <button class="queue-refresh" onclick="oadrSaveDispatchConfig()" style="color:var(--green-dark);border-color:var(--green);">💾 Save</button>
-        </div>
-        <div style="font-size:11px;color:var(--text-hint);margin-bottom:14px;">
-          Configure which device group receives the load control command when SCE sends a DR event at each signal level.
-          These settings are saved to Supabase and read by the worker when an event is received.
-        </div>
-
-        <!-- Level mapping table -->
-        <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center;margin-bottom:14px;">
-          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;padding:0 4px;">Signal Level</div>
-          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;">Target Devices</div>
-          <div style="font-size:11px;font-weight:700;color:var(--text-hint);text-transform:uppercase;">LC Action</div>
-
-          <!-- Level 0 — Normal -->
-          <div style="padding:8px 10px;background:var(--green-bg);border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:12px;font-weight:700;color:var(--green-dark);">L0</div>
-            <div style="font-size:10px;color:var(--green-dark);">Normal</div>
+          <div class="sched-card-title">Current Event Status</div>
+          <div style="display:flex;gap:8px;">
+            <button class="queue-refresh" onclick="oadrOptOut()" style="color:var(--amber);border-color:var(--amber);">🚫 Opt Out Site</button>
+            <button class="queue-refresh" onclick="oadrOptIn()" style="color:var(--green-dark);border-color:var(--green);">✅ Opt In</button>
           </div>
-          <select id="oadr-target-l0" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all">All Devices</option>
-            <option value="none">None (ignore)</option>
-          </select>
-          <select id="oadr-action-l0" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all_on">Restore (All On)</option>
-            <option value="all_off">Shed (All Off)</option>
-          </select>
-
-          <!-- Level 1 — Moderate -->
-          <div style="padding:8px 10px;background:rgba(245,158,11,0.1);border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:12px;font-weight:700;color:var(--amber);">L1</div>
-            <div style="font-size:10px;color:var(--amber);">Moderate</div>
-          </div>
-          <select id="oadr-target-l1" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all">All Devices</option>
-            <option value="none">None (ignore)</option>
-          </select>
-          <select id="oadr-action-l1" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all_off">Shed (All Off)</option>
-            <option value="all_on">Restore (All On)</option>
-          </select>
-
-          <!-- Level 2 — High -->
-          <div style="padding:8px 10px;background:#FEF2F2;border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:12px;font-weight:700;color:var(--red);">L2</div>
-            <div style="font-size:10px;color:var(--red);">High</div>
-          </div>
-          <select id="oadr-target-l2" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all">All Devices</option>
-            <option value="none">None (ignore)</option>
-          </select>
-          <select id="oadr-action-l2" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all_off">Shed (All Off)</option>
-            <option value="all_on">Restore (All On)</option>
-          </select>
-
-          <!-- Level 3 — Special -->
-          <div style="padding:8px 10px;background:#FEF2F2;border-radius:var(--radius-sm);text-align:center;">
-            <div style="font-size:12px;font-weight:700;color:var(--red);">L3</div>
-            <div style="font-size:10px;color:var(--red);">Special</div>
-          </div>
-          <select id="oadr-target-l3" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all">All Devices</option>
-            <option value="none">None (ignore)</option>
-          </select>
-          <select id="oadr-action-l3" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
-            <option value="all_off">Shed (All Off)</option>
-            <option value="all_on">Restore (All On)</option>
-          </select>
         </div>
-
-        <div style="font-size:11px;color:var(--text-hint);padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);">
-          ⓘ Group options load from the Groups tab. Changes take effect immediately on the next incoming VTN event.
-        </div>
+        <div id="oadr-current-event"><div class="sched-empty">No active OpenADR event.</div></div>
       </div>
 
-      <!-- Opt-Out -->
+      <!-- Test Event -->
       <div class="sched-card">
-        <div class="sched-card-header">
-          <div class="sched-card-title">🚫 Opt-Out Management</div>
+        <div class="sched-card-header"><div class="sched-card-title">🧪 Test OpenADR Event</div></div>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px;">Simulate an incoming VTN event to test the full dispatch flow.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Signal Level</label>
+            <select id="oadr-test-signal" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+              <option value="3">3 — Emergency</option>
+              <option value="2" selected>2 — High</option>
+              <option value="1">1 — Moderate</option>
+              <option value="0">0 — Restore All</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Start (minutes from now)</label>
+            <input type="number" id="oadr-test-start" value="1" min="0"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;" />
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Duration (minutes)</label>
+            <input type="number" id="oadr-test-duration" value="30" min="5"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;" />
+          </div>
         </div>
-        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px;">
-          Send an optOut response to the VTN for the current active event, or opt individual devices out of the dispatch while keeping others active.
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="queue-refresh" onclick="oadrOptOut()" style="color:var(--amber);border-color:var(--amber);">🚫 Opt Out Entire Site</button>
-          <button class="queue-refresh" onclick="oadrOptIn()" style="color:var(--green-dark);border-color:var(--green);">✅ Opt Back In</button>
-        </div>
+        <button onclick="simulateOpenADREvent()" style="padding:8px 20px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:13px;font-weight:600;cursor:pointer;">
+          🧪 Simulate Incoming Event
+        </button>
+        <div id="oadr-test-status" style="font-size:11px;margin-top:8px;display:none;"></div>
       </div>
 
     </div>
@@ -5877,6 +5949,635 @@ function scheduleNightlyCheck() {
 }
 
 // ── OpenADR 2.0b VEN Implementation ──────────────────────────────────────────
+
+let oadrVTNConfig  = null;
+let oadrMappings   = [
+  { level: 1.0,  desc: "Emergency Shed",  strategy: 19, mode: "dlc", pct: 100 },
+  { level: 0.75, desc: "High Shed",       strategy: 15, mode: "dlc", pct: 75  },
+  { level: 0.5,  desc: "Medium Shed",     strategy: 9,  mode: "di",  pct: 50  },
+  { level: 0.25, desc: "Low Shed",        strategy: 5,  mode: "di",  pct: 25  },
+  { level: 0.0,  desc: "Restore All",     strategy: 61, mode: "dlc", pct: 0   },
+];
+let drDeviceConfig = {};
+const DR_SHED_LEVELS = ["emergency", "high", "medium", "low"];
+const DR_SHED_LABELS = { emergency: "Emergency", high: "High", medium: "Medium", low: "Low" };
+const DR_MODES = { bas_di: "BAS Mode", direct_load: "Direct Load" };
+
+let _oadrPollInterval = null;
+let _oadrPollLog      = [];
+let _oadrActiveEvent  = null;
+
+function initOADRTab() {
+  // Set endpoint URLs
+  const epEvent  = document.getElementById("oadr-endpoint-event");
+  const epCancel = document.getElementById("oadr-endpoint-cancel");
+  const epReport = document.getElementById("oadr-endpoint-report");
+  if (epEvent)  epEvent.textContent  = PROXY_URL + "openadr/event";
+  if (epCancel) epCancel.textContent = PROXY_URL + "openadr/cancel";
+  if (epReport) epReport.textContent = PROXY_URL + "openadr/report";
+
+  initOpenADRConfig();
+  loadOADREvents();
+  oadrLoadDispatchConfig();
+  oadrSetPollInterval(document.getElementById('oadr-poll-interval')?.value || '5');
+  selectOADRAuthMode('mtls', null, true);
+}
+
+async function initOpenADRConfig() {
+  try {
+    const rows = await supabaseGet("program_settings?setting_key=in.(vtn_url,vtn_id,ven_id,oadr_transport,oadr_reg_id,oadr_auth_mode,oadr_mtls_cert_id)");
+    if (Array.isArray(rows)) {
+      const cfg = {};
+      rows.forEach(r => { cfg[r.setting_key] = r.setting_value; });
+      const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+      set("oadr-vtn-id",      cfg.vtn_id);
+      set("oadr-ven-id",      cfg.ven_id);
+      set("oadr-vtn-url",     cfg.vtn_url);
+      set("oadr-transport",   cfg.oadr_transport);
+      set("oadr-reg-id",      cfg.oadr_reg_id);
+      set("oadr-mtls-cert-id", cfg.oadr_mtls_cert_id || "openadr-ven-cert");
+      if (cfg.oadr_auth_mode) selectOADRAuthMode(cfg.oadr_auth_mode, null, true);
+      if (cfg.oadr_mtls_cert_id) updateMTLSStatus(cfg.oadr_mtls_cert_id);
+    }
+  } catch(e) { console.error("initOpenADRConfig:", e); }
+  renderMappingTable();
+  loadDRConfig();
+}
+
+function renderMappingTable() {
+  const tbody = document.getElementById("oadr-mapping-table");
+  if (!tbody) return;
+  tbody.innerHTML = oadrMappings.map((m, i) => `
+    <tr>
+      <td style="padding:8px;border-bottom:0.5px solid var(--border);">
+        <input type="number" step="0.05" min="0" max="3" value="${m.level}"
+          onchange="oadrMappings[${i}].level=parseFloat(this.value)"
+          style="width:70px;padding:4px 6px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface2);font-size:11px;" />
+      </td>
+      <td style="padding:8px;border-bottom:0.5px solid var(--border);">
+        <input type="text" value="${m.desc}"
+          onchange="oadrMappings[${i}].desc=this.value"
+          style="width:140px;padding:4px 6px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface2);font-size:11px;" />
+      </td>
+      <td style="padding:8px;border-bottom:0.5px solid var(--border);">
+        <input type="number" min="0" max="63" value="${m.strategy}"
+          onchange="oadrMappings[${i}].strategy=parseInt(this.value)"
+          style="width:70px;padding:4px 6px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface2);font-size:11px;" />
+      </td>
+      <td style="padding:8px;border-bottom:0.5px solid var(--border);">
+        <select onchange="oadrMappings[${i}].mode=this.value"
+          style="padding:4px 6px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface2);font-size:11px;">
+          <option value="dlc" ${m.mode==="dlc"?"selected":""}>DLC</option>
+          <option value="di"  ${m.mode==="di" ?"selected":""}>DI</option>
+        </select>
+      </td>
+      <td style="padding:8px;border-bottom:0.5px solid var(--border);color:var(--text-hint);">${m.pct}%</td>
+    </tr>`).join("");
+}
+
+async function saveVTNConfig() {
+  const authMode = document.querySelector(".oadr-auth-btn.active")?.dataset?.mode || "mtls";
+  const pairs = [
+    ["vtn_url",         document.getElementById("oadr-vtn-url")?.value?.trim()  || ""],
+    ["vtn_id",          document.getElementById("oadr-vtn-id")?.value?.trim()   || ""],
+    ["ven_id",          document.getElementById("oadr-ven-id")?.value?.trim()   || "E545300JH"],
+    ["ven_name",        document.getElementById("oadr-ven-id")?.value?.trim()   || "E545300JH"],
+    ["oadr_transport",  document.getElementById("oadr-transport")?.value        || "soap"],
+    ["oadr_reg_id",     document.getElementById("oadr-reg-id")?.value?.trim()   || ""],
+    ["oadr_auth_mode",  authMode],
+    ["oadr_mtls_cert_id", document.getElementById("oadr-mtls-cert-id")?.value?.trim() || "openadr-ven-cert"],
+  ];
+  const statusEl = document.getElementById("oadr-config-status");
+  try {
+    for (const [key, value] of pairs) {
+      await fetch(`${SUPABASE_URL}/rest/v1/program_settings`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+          "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify({ setting_key: key, setting_value: value })
+      });
+    }
+    if (statusEl) { statusEl.textContent = "✅ VTN config saved."; statusEl.style.color = "var(--green-dark)"; statusEl.style.display = "block"; }
+    setTimeout(() => { if (statusEl) statusEl.style.display = "none"; }, 3000);
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = `Error: ${e.message}`; statusEl.style.color = "var(--red)"; statusEl.style.display = "block"; }
+  }
+}
+
+async function saveMappings() {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/program_settings`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+        "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({ setting_key: "openadr_mappings", setting_value: JSON.stringify(oadrMappings) })
+    });
+    const statusEl = document.getElementById("oadr-mapping-status");
+    if (statusEl) { statusEl.textContent = "✅ Mappings saved."; statusEl.style.color = "var(--green-dark)"; statusEl.style.display = "block"; }
+    setTimeout(() => { if (statusEl) statusEl.style.display = "none"; }, 2000);
+  } catch(e) { console.error("saveMappings:", e); }
+}
+
+function selectOADRAuthMode(mode, btn, silent = false) {
+  document.querySelectorAll(".oadr-auth-btn").forEach(b => {
+    b.style.borderColor = "var(--border-md)"; b.style.background = "var(--surface2)";
+    b.style.color = "var(--text-secondary)"; b.classList.remove("active");
+  });
+  const target = btn || document.querySelector(`.oadr-auth-btn[data-mode="${mode}"]`);
+  if (target) {
+    target.style.borderColor = "var(--green)"; target.style.background = "var(--green-bg)";
+    target.style.color = "var(--green-dark)"; target.classList.add("active");
+  }
+  const apiPanel  = document.getElementById("oadr-auth-apikey");
+  const mtlsPanel = document.getElementById("oadr-auth-mtls");
+  if (apiPanel)  apiPanel.style.display  = mode === "apikey" ? "block" : "none";
+  if (mtlsPanel) mtlsPanel.style.display = mode === "mtls"   ? "block" : "none";
+}
+
+function updateMTLSStatus(certId) {
+  const indicator = document.getElementById("oadr-mtls-indicator");
+  const statusText = document.getElementById("oadr-mtls-status-text");
+  if (!certId) {
+    if (indicator) indicator.style.background = "var(--border-md)";
+    if (statusText) statusText.textContent = "No certificate configured";
+    return;
+  }
+  if (indicator) indicator.style.background = "var(--green-dark)";
+  if (statusText) statusText.innerHTML = `✓ Certificate configured &bull; Binding: <code style="font-family:monospace;font-size:10px;">${certId}</code>`;
+}
+
+async function verifyMTLSCert() {
+  const certId  = document.getElementById("oadr-mtls-cert-id")?.value?.trim();
+  const statusEl = document.getElementById("oadr-mtls-cert-status");
+  if (!certId) { if (statusEl) { statusEl.textContent = "Enter a Certificate ID first."; statusEl.style.color = "var(--red)"; } return; }
+  if (statusEl) { statusEl.textContent = "Verifying via Worker..."; statusEl.style.color = "var(--text-hint)"; }
+  try {
+    const res = await fetch(PROXY_URL + "openadr/mtls-status", { method: "GET" });
+    const data = await res.json();
+    if (data.cert_bound) {
+      if (statusEl) { statusEl.textContent = `✅ Certificate binding active — ${data.common_name||certId} — expires ${data.expires||'unknown'}`; statusEl.style.color = "var(--green-dark)"; }
+      updateMTLSStatus(certId);
+    } else {
+      if (statusEl) { statusEl.textContent = "⚠️ Certificate binding not yet active in Worker — redeploy worker with VTN_CERT binding."; statusEl.style.color = "var(--amber)"; }
+    }
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = `Worker mTLS route not yet deployed: ${e.message}`; statusEl.style.color = "var(--amber)"; }
+    updateMTLSStatus(certId);
+  }
+}
+
+async function testVTNConnection() {
+  const vtnUrl   = document.getElementById("oadr-vtn-url")?.value?.trim();
+  const statusEl = document.getElementById("oadr-config-status");
+  if (!vtnUrl) { if (statusEl) { statusEl.textContent = "Enter a VTN URL first."; statusEl.style.color = "var(--red)"; statusEl.style.display = "block"; } return; }
+  if (statusEl) { statusEl.textContent = "Saving config then testing via mTLS Worker…"; statusEl.style.color = "var(--text-hint)"; statusEl.style.display = "block"; }
+  await saveVTNConfig();
+  try {
+    const res  = await fetch(PROXY_URL + "openadr/test", { method: "GET", headers: { "Content-Type": "application/json" } });
+    const data = await res.json();
+    const badge = document.getElementById("oadr-status-badge");
+    if (data.success) {
+      if (statusEl) { statusEl.textContent = `✅ Connected — HTTP ${data.http_status} · Cert: ${data.cert_used ? "mTLS ✓" : "no cert"} · VTN: ${data.response_code||"ok"}`; statusEl.style.color = "var(--green-dark)"; }
+      if (badge) { badge.textContent = "✅ Connected"; badge.style.background = "var(--green-bg)"; badge.style.color = "var(--green-dark)"; }
+      oadrLog(`Connection test OK — HTTP ${data.http_status}`);
+    } else {
+      if (statusEl) { statusEl.textContent = `⚠️ Connection failed: ${data.error || "HTTP "+data.http_status}`; statusEl.style.color = "var(--amber)"; }
+      if (badge) { badge.textContent = "❌ Disconnected"; badge.style.background = "#FEF2F2"; badge.style.color = "var(--red)"; }
+      oadrLog(`Connection test FAILED: ${data.error}`);
+    }
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = `Error: ${e.message}`; statusEl.style.color = "var(--red)"; statusEl.style.display = "block"; }
+    oadrLog(`Connection ERROR: ${e.message}`);
+  }
+}
+
+// ── DR Device Config ──────────────────────────────────────────────────────────
+
+async function loadDRConfig() {
+  const list = document.getElementById("dr-device-config-list");
+  if (!list) return;
+  let devRows = [], relayRows = [];
+  try {
+    devRows   = await supabaseGet("device_dr_config?order=device_uid.asc") || [];
+    relayRows = await supabaseGet("device_relay_dr_config?order=device_uid.asc,relay_number.asc") || [];
+  } catch(e) { console.warn("DR config tables may not exist yet."); }
+  const realDevices = DEVICES.filter(d => !d.uid.includes("PLACEHOLDER"));
+  drDeviceConfig = {};
+  for (const dev of realDevices) {
+    const saved = devRows.find(r => r.device_uid === dev.uid) || {};
+    const relays = {};
+    for (let r = 1; r <= 4; r++) {
+      const savedRelay = relayRows.find(x => x.device_uid === dev.uid && x.relay_number === r) || {};
+      relays[r] = { mode_override: savedRelay.mode_override??null, shed_level: savedRelay.shed_level??null,
+        is_designated: savedRelay.is_designated??(r===1), enabled: savedRelay.enabled??true };
+    }
+    drDeviceConfig[dev.uid] = { ven_resource: saved.ven_resource??false, default_mode: saved.default_mode??"direct_load", relays };
+  }
+  renderDRConfig();
+}
+
+function renderDRConfig() {
+  const list = document.getElementById("dr-device-config-list");
+  if (!list) return;
+  const realDevices = DEVICES.filter(d => !d.uid.includes("PLACEHOLDER"));
+  if (!realDevices.length) { list.innerHTML = '<div class="sched-empty">No devices configured.</div>'; return; }
+  list.innerHTML = realDevices.map(dev => {
+    const cfg = drDeviceConfig[dev.uid] || {};
+    const effMode = cfg.default_mode || "direct_load";
+    const isVEN   = cfg.ven_resource || false;
+    const relayRows = [1,2,3,4].map(r => {
+      const rc = cfg.relays?.[r] || {};
+      const effectiveMode = rc.mode_override ?? effMode;
+      const isBASRelay = effectiveMode === "bas_di";
+      const modeOverrideOptions = [
+        `<option value="" ${!rc.mode_override?"selected":""}>Inherit (${DR_MODES[effMode]||effMode})</option>`,
+        `<option value="bas_di" ${rc.mode_override==="bas_di"?"selected":""}>BAS/DI</option>`,
+        `<option value="direct_load" ${rc.mode_override==="direct_load"?"selected":""}>Direct Load</option>`
+      ].join("");
+      const shedOptions = DR_SHED_LEVELS.map(sl => `<option value="${sl}" ${rc.shed_level===sl?"selected":""}>${DR_SHED_LABELS[sl]}</option>`).join("");
+      return `<tr>
+        <td style="padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:12px;font-weight:500;">R${r}</td>
+        <td style="padding:6px 10px;border-bottom:0.5px solid var(--border);">
+          <select onchange="drUpdateRelay('${dev.uid}',${r},'mode_override',this.value||null)" style="padding:3px 6px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface2);font-size:11px;">${modeOverrideOptions}</select>
+        </td>
+        <td style="padding:6px 10px;border-bottom:0.5px solid var(--border);">
+          ${isBASRelay ? `<select onchange="drUpdateRelay('${dev.uid}',${r},'shed_level',this.value)" style="padding:3px 6px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface2);font-size:11px;"><option value="">— None —</option>${shedOptions}</select>` : '<span style="font-size:11px;color:var(--text-hint);">N/A</span>'}
+        </td>
+        <td style="padding:6px 10px;border-bottom:0.5px solid var(--border);">
+          ${!isBASRelay ? `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;"><input type="checkbox" ${rc.is_designated?"checked":""} onchange="drUpdateRelay('${dev.uid}',${r},'is_designated',this.checked)" /> Designated</label>` : '<span style="font-size:11px;color:var(--text-hint);">N/A</span>'}
+        </td>
+        <td style="padding:6px 10px;border-bottom:0.5px solid var(--border);">
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;"><input type="checkbox" ${rc.enabled?"checked":""} onchange="drUpdateRelay('${dev.uid}',${r},'enabled',this.checked)" /> Enabled</label>
+        </td>
+      </tr>`;
+    }).join("");
+    return `<div style="border:0.5px solid var(--border-md);border-radius:var(--radius-sm);margin-bottom:10px;overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--surface2);flex-wrap:wrap;">
+        <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${dev.name}</div><div style="font-size:10px;color:var(--text-hint);font-family:monospace;">${dev.uid}</div></div>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" ${isVEN?"checked":""} onchange="drUpdateDevice('${dev.uid}','ven_resource',this.checked)" />
+          <span style="font-size:11px;font-weight:600;color:${isVEN?"var(--green-dark)":"var(--text-secondary)"};">VEN Resource</span>
+        </label>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;color:var(--text-hint);">Default Mode:</span>
+          <select onchange="drUpdateDevice('${dev.uid}','default_mode',this.value);renderDRConfig();" style="padding:4px 8px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface);font-size:11px;font-weight:600;">
+            <option value="bas_di" ${effMode==="bas_di"?"selected":""}>🏢 BAS Mode</option>
+            <option value="direct_load" ${effMode==="direct_load"?"selected":""}>🔌 Direct Load</option>
+          </select>
+        </div>
+      </div>
+      <div style="${!isVEN?"opacity:0.5;pointer-events:none;":""}">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="background:var(--surface);">
+            <th style="text-align:left;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">Relay</th>
+            <th style="text-align:left;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">Mode Override</th>
+            <th style="text-align:left;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">Shed Level (BAS)</th>
+            <th style="text-align:left;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">Designated Relay</th>
+            <th style="text-align:left;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">Participation</th>
+          </tr></thead>
+          <tbody>${relayRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function drUpdateDevice(uid, field, value) {
+  if (!drDeviceConfig[uid]) drDeviceConfig[uid] = { ven_resource: false, default_mode: "direct_load", relays: {} };
+  drDeviceConfig[uid][field] = value;
+}
+
+function drUpdateRelay(uid, relayNum, field, value) {
+  if (!drDeviceConfig[uid]) drDeviceConfig[uid] = { ven_resource: false, default_mode: "direct_load", relays: {} };
+  if (!drDeviceConfig[uid].relays[relayNum]) drDeviceConfig[uid].relays[relayNum] = {};
+  if (field === "is_designated" && value === true) {
+    for (let r = 1; r <= 4; r++) { if (r !== relayNum && drDeviceConfig[uid].relays[r]) drDeviceConfig[uid].relays[r].is_designated = false; }
+  }
+  drDeviceConfig[uid].relays[relayNum][field] = value === "" ? null : value;
+  renderDRConfig();
+}
+
+function drSetAllMode(mode) {
+  DEVICES.filter(d => !d.uid.includes("PLACEHOLDER")).forEach(dev => {
+    if (!drDeviceConfig[dev.uid]) drDeviceConfig[dev.uid] = { ven_resource: false, default_mode: mode, relays: {} };
+    drDeviceConfig[dev.uid].default_mode = mode;
+  });
+  renderDRConfig();
+}
+
+function drSetAllVEN(enabled) {
+  DEVICES.filter(d => !d.uid.includes("PLACEHOLDER")).forEach(dev => {
+    if (!drDeviceConfig[dev.uid]) drDeviceConfig[dev.uid] = { ven_resource: enabled, default_mode: "direct_load", relays: {} };
+    drDeviceConfig[dev.uid].ven_resource = enabled;
+  });
+  renderDRConfig();
+}
+
+async function saveAllDRConfig() {
+  const realDevices = DEVICES.filter(d => !d.uid.includes("PLACEHOLDER"));
+  let errors = 0;
+  for (const dev of realDevices) {
+    const cfg = drDeviceConfig[dev.uid];
+    if (!cfg) continue;
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/device_dr_config?on_conflict=device_uid`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+          "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ device_uid: dev.uid, ven_resource: cfg.ven_resource, default_mode: cfg.default_mode, updated_at: new Date().toISOString() })
+      });
+    } catch(e) { errors++; }
+    for (let r = 1; r <= 4; r++) {
+      const rc = cfg.relays?.[r];
+      if (!rc) continue;
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/device_relay_dr_config?on_conflict=device_uid,relay_number`, {
+          method: "POST",
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+            "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ device_uid: dev.uid, relay_number: r, mode_override: rc.mode_override||null,
+            shed_level: rc.shed_level||null, is_designated: rc.is_designated??false, enabled: rc.enabled??true, updated_at: new Date().toISOString() })
+        });
+      } catch(e) { errors++; }
+    }
+  }
+  setStatus(errors ? "error" : "ready", errors ? `DR config saved with ${errors} error(s).` : "DR device configuration saved.");
+}
+
+// ── Test / Simulate ───────────────────────────────────────────────────────────
+
+async function simulateOpenADREvent() {
+  const signalLevel = parseInt(document.getElementById("oadr-test-signal")?.value || "2");
+  const startMins   = parseInt(document.getElementById("oadr-test-start")?.value   || "1");
+  const duration    = parseInt(document.getElementById("oadr-test-duration")?.value || "30");
+  const statusEl    = document.getElementById("oadr-test-status");
+  if (statusEl) { statusEl.textContent = "Sending test event to worker..."; statusEl.style.color = "var(--text-hint)"; statusEl.style.display = "block"; }
+  try {
+    const dtstart = new Date(Date.now() + startMins * 60000).toISOString();
+    const testXml = `<?xml version="1.0" encoding="UTF-8"?>
+<oadrPayload xmlns:oadr="http://openadr.org/oadr-2.0b/2012/07" xmlns:ei="http://docs.oasis-open.org/ns/energyinterop/201110" xmlns:xcal="urn:ietf:params:xml:ns:icalendar-2.0">
+  <oadr:oadrSignedObject>
+    <oadr:oadrDistributeEvent ei:schemaVersion="2.0b">
+      <ei:eiRequestID>TEST-${Date.now()}</ei:eiRequestID>
+      <ei:eventDescriptor>
+        <ei:eventID>TEST-EVENT-${Date.now()}</ei:eventID>
+        <ei:modificationNumber>0</ei:modificationNumber>
+      </ei:eventDescriptor>
+      <oadr:oadrEvent>
+        <ei:eiActivePeriod>
+          <xcal:properties>
+            <xcal:dtstart><xcal:date-time>${dtstart}</xcal:date-time></xcal:dtstart>
+            <xcal:duration><xcal:duration>PT${duration}M</xcal:duration></xcal:duration>
+          </xcal:properties>
+        </ei:eiActivePeriod>
+        <ei:eiEventSignals>
+          <ei:eiEventSignal>
+            <ei:signalName>SIMPLE</ei:signalName>
+            <ei:signalType>LOAD_DISPATCH</ei:signalType>
+            <ei:intervals>
+              <ei:interval><ei:uid><ei:text>0</ei:text></ei:uid>
+                <ei:signalPayload><ei:payloadFloat><ei:value>${signalLevel}</ei:value></ei:payloadFloat></ei:signalPayload>
+              </ei:interval>
+            </ei:intervals>
+          </ei:eiEventSignal>
+        </ei:eiEventSignals>
+      </oadr:oadrEvent>
+    </oadr:oadrDistributeEvent>
+  </oadr:oadrSignedObject>
+</oadrPayload>`;
+    const res  = await fetch(PROXY_URL + "openadr/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/xml" },
+      body: testXml
+    });
+    const text = await res.text();
+    if (statusEl) { statusEl.textContent = `✅ Test event sent — DR Level ${signalLevel}, starting in ${startMins} min, duration ${duration} min. Check Event History below.`; statusEl.style.color = "var(--green-dark)"; }
+    oadrLog(`Test event sent — L${signalLevel}, ${startMins}min from now, ${duration}min duration`);
+    setTimeout(() => loadOADREvents(), 1500);
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = `Error: ${e.message}`; statusEl.style.color = "var(--red)"; }
+    oadrLog(`Test event ERROR: ${e.message}`);
+  }
+}
+
+// ── Poll / Status ─────────────────────────────────────────────────────────────
+
+function oadrLog(msg) {
+  const ts = new Date().toLocaleTimeString();
+  _oadrPollLog.unshift(`[${ts}] ${msg}`);
+  if (_oadrPollLog.length > 50) _oadrPollLog.pop();
+  const el = document.getElementById('oadr-poll-log');
+  if (el) el.textContent = _oadrPollLog.join('\n');
+}
+
+async function oadrPollNow() {
+  const badge = document.getElementById('oadr-status-badge');
+  if (badge) { badge.textContent = '● Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
+  oadrLog('Polling VTN…');
+  try {
+    const res  = await fetch(PROXY_URL + 'openadr/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await res.json();
+    const pollEl = document.getElementById('oadr-poll-status');
+    if (pollEl) pollEl.textContent = `Last poll: ${new Date().toLocaleTimeString()}`;
+    if (data.success) {
+      if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
+      oadrLog(`Poll OK — HTTP ${data.status}${data.has_event ? ' — EVENT RECEIVED' : ' — no pending events'}`);
+      if (data.has_event) { await loadOADREvents(); }
+    } else {
+      if (badge) { badge.textContent = '❌ Disconnected'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+      oadrLog(`Poll FAILED: ${data.error || 'unknown'}`);
+    }
+  } catch(e) {
+    if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+    oadrLog(`Poll ERROR: ${e.message}`);
+  }
+}
+
+function oadrSetPollInterval(mins) {
+  if (_oadrPollInterval) { clearInterval(_oadrPollInterval); _oadrPollInterval = null; }
+  const m = parseInt(mins);
+  if (m > 0) { _oadrPollInterval = setInterval(oadrPollNow, m * 60 * 1000); oadrLog(`Auto-poll every ${m}min`); }
+  else oadrLog('Auto-poll disabled');
+}
+
+async function oadrRegister() {
+  oadrLog('Sending oadrCreatePartyRegistration…');
+  try {
+    const res  = await fetch(PROXY_URL + 'openadr/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await res.json();
+    oadrLog(`Registration: ${data.success ? 'OK' : 'FAILED'} — HTTP ${data.http_status}`);
+  } catch(e) { oadrLog(`Registration ERROR: ${e.message}`); }
+}
+
+async function oadrOptOut() {
+  if (!_oadrActiveEvent) { alert('No active OpenADR event to opt out of.'); return; }
+  if (!confirm(`Opt out site from event "${_oadrActiveEvent.event_id}"?\nA restore will be sent to all devices.`)) return;
+  try {
+    const res = await fetch(PROXY_URL + 'openadr/optout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: _oadrActiveEvent.event_id }) });
+    const data = await res.json();
+    oadrLog(`OptOut: ${data.success ? '✅ Sent' : '❌ Failed'}`);
+    await loadOADREvents();
+  } catch(e) { oadrLog(`OptOut ERROR: ${e.message}`); }
+}
+
+async function oadrOptIn() {
+  oadrLog('Sending optIn…');
+  try {
+    await fetch(PROXY_URL + 'openadr/optin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    oadrLog('OptIn sent');
+  } catch(e) { oadrLog(`OptIn ERROR: ${e.message}`); }
+}
+
+async function loadOADREvents() {
+  const histEl    = document.getElementById('oadr-event-history');
+  const currentEl = document.getElementById('oadr-current-event');
+  if (!histEl) return;
+  try {
+    const rows = await supabaseGet('openadr_events?order=received_at.desc&limit=20');
+    if (!Array.isArray(rows) || !rows.length) {
+      if (histEl) histEl.innerHTML = '<div class="sched-empty">No OpenADR events received yet.</div>';
+      return;
+    }
+    _oadrActiveEvent = rows.find(r => r.event_status === 'received' || r.event_status === 'dispatched') || null;
+    oadrUpdateCurrentEvent();
+
+    const statusColor = { received:'var(--blue-dark)', dispatched:'var(--green-dark)', cancelled:'var(--red)', error:'var(--red)', optout:'var(--amber)' };
+    const statusBg    = { received:'var(--blue-bg)', dispatched:'var(--green-bg)', cancelled:'#FEF2F2', error:'#FEF2F2', optout:'rgba(245,158,11,0.1)' };
+    const drLabel     = { 0:'Normal', 1:'Moderate', 2:'High', 3:'Special' };
+
+    histEl.innerHTML = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr>
+        <th style="text-align:left;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Received</th>
+        <th style="text-align:left;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Event ID</th>
+        <th style="text-align:center;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">DR Level</th>
+        <th style="text-align:left;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Event Start</th>
+        <th style="text-align:center;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Duration</th>
+        <th style="text-align:center;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Status</th>
+        <th style="text-align:left;padding:7px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Source</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">${r.received_at?new Date(r.received_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</td>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);font-family:monospace;font-size:10px;">${(r.event_id||'—').slice(-16)}</td>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:center;">${r.dr_level!=null?`<span style="font-weight:700;">L${r.dr_level}</span> <span style="font-size:10px;color:var(--text-hint);">${drLabel[r.dr_level]||''}</span>`:'—'}</td>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);font-size:10px;">${r.event_start?new Date(r.event_start).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</td>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:center;">${r.duration_mins?r.duration_mins+' min':'—'}</td>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:center;"><span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;background:${statusBg[r.event_status]||'var(--surface2)'};color:${statusColor[r.event_status]||'var(--text-hint)'};">${r.event_status||'—'}</span></td>
+        <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">${r.source||'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } catch(e) {
+    if (histEl) histEl.innerHTML = `<div class="sched-empty" style="color:var(--red);">Error: ${e.message}</div>`;
+  }
+}
+
+function oadrUpdateCurrentEvent() {
+  const el = document.getElementById('oadr-current-event');
+  if (!el) return;
+  if (!_oadrActiveEvent) { el.innerHTML = '<div class="sched-empty">No active OpenADR event.</div>'; return; }
+  const e = _oadrActiveEvent;
+  const drColors = { 0:'var(--green-dark)', 1:'var(--amber)', 2:'var(--red)', 3:'var(--red)' };
+  const drLabels = { 0:'Normal', 1:'Moderate', 2:'High', 3:'Special' };
+  const start    = e.event_start ? new Date(e.event_start) : null;
+  const end      = start && e.duration_mins ? new Date(start.getTime() + e.duration_mins * 60000) : null;
+  const now      = new Date();
+  const isActive = start && end && now >= start && now <= end;
+  const remaining = end ? Math.max(0, Math.round((end - now) / 60000)) : null;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      ${isActive ? '<span style="width:8px;height:8px;border-radius:50%;background:var(--green-dark);display:inline-block;animation:pulse 1.5s infinite;"></span>' : ''}
+      <span style="font-size:13px;font-weight:700;color:${drColors[e.dr_level]||'var(--text-primary)'};">DR Level ${e.dr_level} — ${drLabels[e.dr_level]||''}</span>
+      ${isActive && remaining!==null ? `<span style="font-size:11px;color:var(--text-hint);">${remaining}m remaining</span>` : ''}
+    </div>
+    <div style="font-size:11px;color:var(--text-hint);display:flex;flex-direction:column;gap:4px;">
+      <div>Event ID: <span style="font-family:monospace;">${(e.event_id||'').slice(-20)}</span></div>
+      <div>Start: ${start?start.toLocaleString():'—'}</div>
+      <div>End: ${end?end.toLocaleString():'—'}</div>
+      <div>Duration: ${e.duration_mins||'—'} minutes</div>
+      <div>Status: <strong>${e.event_status}</strong></div>
+    </div>`;
+}
+
+// ── Dispatch Config ───────────────────────────────────────────────────────────
+
+async function oadrLoadDispatchConfig() {
+  try {
+    const groups = await supabaseGet('device_groups?order=group_number');
+    const uniqueGroups = {};
+    if (Array.isArray(groups)) groups.forEach(g => { if (!uniqueGroups[g.group_number]) uniqueGroups[g.group_number] = g.group_name || `Group ${g.group_number}`; });
+    const groupOptions = Object.entries(uniqueGroups).map(([num, name]) => `<option value="group_${num}">${name}</option>`).join('');
+    const baseOptions = `<option value="all">All Devices</option>${groupOptions}<option value="none">None (ignore)</option>`;
+    [0,1,2,3].forEach(l => { const sel = document.getElementById(`oadr-target-l${l}`); if (sel) sel.innerHTML = baseOptions; });
+  } catch(e) {}
+  try {
+    const rows = await supabaseGet('program_settings?setting_key=eq.oadr_dispatch_config&select=setting_value');
+    if (rows?.[0]?.setting_value) {
+      const cfg = JSON.parse(rows[0].setting_value);
+      [0,1,2,3].forEach(l => {
+        const targetSel = document.getElementById(`oadr-target-l${l}`);
+        const actionSel = document.getElementById(`oadr-action-l${l}`);
+        if (targetSel && cfg[`l${l}_target`]) targetSel.value = cfg[`l${l}_target`];
+        if (actionSel && cfg[`l${l}_action`]) actionSel.value = cfg[`l${l}_action`];
+      });
+    }
+  } catch(e) {}
+}
+
+async function oadrSaveDispatchConfig() {
+  const cfg = {};
+  [0,1,2,3].forEach(l => {
+    cfg[`l${l}_target`] = document.getElementById(`oadr-target-l${l}`)?.value || 'all';
+    cfg[`l${l}_action`] = document.getElementById(`oadr-action-l${l}`)?.value || 'all_off';
+  });
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/program_settings`, {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+        'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ setting_key: 'oadr_dispatch_config', setting_value: JSON.stringify(cfg) })
+    });
+    setStatus('success', '✅ Dispatch config saved');
+    oadrLog('Dispatch config saved');
+  } catch(e) { setStatus('error', `Failed: ${e.message}`); }
+}
+
+// ── Summary card (Program Summary tab) ───────────────────────────────────────
+
+async function loadOADRSummaryCard() {
+  const badge     = document.getElementById('oadr-connection-badge');
+  const lastPoll  = document.getElementById('oadr-last-poll');
+  const lastEvent = document.getElementById('oadr-last-event');
+  const recentEl  = document.getElementById('oadr-recent-events');
+  try {
+    const rows = await supabaseGet('openadr_events?order=received_at.desc&limit=5');
+    if (Array.isArray(rows) && rows.length) {
+      const latest = rows[0];
+      if (lastEvent) lastEvent.textContent = latest.received_at ? new Date(latest.received_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+      if (badge) { badge.textContent = '✅ Active'; badge.style.background = 'var(--green-bg)'; badge.style.color = 'var(--green-dark)'; }
+      if (recentEl) {
+        recentEl.innerHTML = rows.map(r => `
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border);font-size:11px;">
+            <span style="color:var(--text-hint);font-size:10px;min-width:80px;">${r.received_at?new Date(r.received_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</span>
+            <span style="font-weight:600;">DR L${r.dr_level??'?'}</span>
+            <span style="color:var(--text-hint);">${r.duration_mins?r.duration_mins+'min':''}</span>
+            <span style="margin-left:auto;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:600;background:${r.event_status==='dispatched'?'var(--green-bg)':'var(--surface2)'};color:${r.event_status==='dispatched'?'var(--green-dark)':'var(--text-hint)'};">${r.event_status||'—'}</span>
+          </div>`).join('');
+      }
+    } else {
+      if (recentEl) recentEl.innerHTML = '<div class="sched-empty">No OpenADR events received yet.</div>';
+    }
+    if (lastPoll) lastPoll.textContent = new Date().toLocaleTimeString();
+  } catch(e) {
+    if (badge) { badge.textContent = '⚠ DB Error'; badge.style.color = 'var(--amber)'; }
+  }
+}
+
+function startOADRPoller() {
+  loadOADRSummaryCard();
+  if (_oadrPollInterval) clearInterval(_oadrPollInterval);
+  _oadrPollInterval = setInterval(loadOADRSummaryCard, 5 * 60 * 1000);
+}
+
+</script>
 
 const OADR_VTN_URL   = "https://sce2vtn.openadr.com/bvtn/OpenADR2/Simple/2.0b";
 const OADR_VEN_ID    = "E545300JH";
