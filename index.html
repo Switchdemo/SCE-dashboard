@@ -565,6 +565,35 @@
         </div>
       </div>
 
+
+      <!-- OpenADR VTN Status -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">🔗 OpenADR VTN Connection</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="oadr-connection-badge" style="font-size:11px;padding:3px 10px;border-radius:10px;background:var(--surface2);color:var(--text-hint);">Unknown</span>
+            <button class="queue-refresh" onclick="oadrPollNow()">Poll VTN</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div style="text-align:center;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);">
+            <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;margin-bottom:4px;">VEN ID</div>
+            <div style="font-size:13px;font-weight:700;font-family:monospace;" id="oadr-ven-id">E545300JH</div>
+          </div>
+          <div style="text-align:center;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);">
+            <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;margin-bottom:4px;">Last Poll</div>
+            <div style="font-size:12px;font-weight:600;" id="oadr-last-poll">Never</div>
+          </div>
+          <div style="text-align:center;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);">
+            <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;margin-bottom:4px;">Last Event</div>
+            <div style="font-size:12px;font-weight:600;" id="oadr-last-event">None</div>
+          </div>
+        </div>
+        <div id="oadr-recent-events">
+          <div class="sched-empty">No OpenADR events received yet.</div>
+        </div>
+      </div>
+
       <!-- Device Status Table -->
       <div class="sched-card">
         <div class="sched-card-header">
@@ -3397,6 +3426,7 @@ let summaryRefreshInterval = null;
 async function initSummaryTab() {
   await loadProgramSummary();
   await populateParticipationEventSelect();
+  startOADRPoller();
   // Auto-refresh every 10 seconds
   if (summaryRefreshInterval) clearInterval(summaryRefreshInterval);
   summaryRefreshInterval = setInterval(async () => {
@@ -5660,6 +5690,79 @@ function scheduleNightlyCheck() {
   if(now.getHours()>=2)mn.setDate(mn.getDate()+1);
   nightlyCheckTimer=setTimeout(()=>runHealthCheckNow(),mn.getTime()-now.getTime());
 }
+
+// ── OpenADR VTN Integration ───────────────────────────────────────────────────
+
+let _oadrPollInterval = null;
+
+async function oadrPollNow() {
+  const badge   = document.getElementById('oadr-connection-badge');
+  const lastPoll = document.getElementById('oadr-last-poll');
+  if (badge) { badge.textContent = 'Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
+  try {
+    const res  = await fetch(PROXY_URL + 'openadr/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await res.json();
+    if (lastPoll) lastPoll.textContent = new Date().toLocaleTimeString();
+    if (data.success) {
+      if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
+      if (data.has_event) await loadOADREvents();
+    } else {
+      if (badge) { badge.textContent = '❌ Poll Failed'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+    }
+  } catch(e) {
+    if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+    console.error('oadrPollNow:', e.message);
+  }
+}
+
+async function loadOADREvents() {
+  const el = document.getElementById('oadr-recent-events');
+  const lastEventEl = document.getElementById('oadr-last-event');
+  if (!el) return;
+  try {
+    const rows = await supabaseGet('openadr_events?order=received_at.desc&limit=10');
+    if (!Array.isArray(rows) || !rows.length) {
+      el.innerHTML = '<div class="sched-empty">No OpenADR events received yet.</div>';
+      return;
+    }
+    const latest = rows[0];
+    if (lastEventEl) lastEventEl.textContent = latest.received_at ? new Date(latest.received_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+
+    const statusColor = { received:'var(--blue-dark)', dispatched:'var(--green-dark)', cancelled:'var(--red)', error:'var(--red)' };
+    const statusBg    = { received:'var(--blue-bg)', dispatched:'var(--green-bg)', cancelled:'#FEF2F2', error:'#FEF2F2' };
+
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr>
+        <th style="text-align:left;padding:5px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Received</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Event ID</th>
+        <th style="text-align:center;padding:5px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">DR Level</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Start</th>
+        <th style="text-align:center;padding:5px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Duration</th>
+        <th style="text-align:center;padding:5px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Status</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-size:10px;color:var(--text-hint);">${r.received_at?new Date(r.received_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-family:monospace;font-size:10px;">${(r.event_id||'—').slice(-12)}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:center;font-weight:700;">${r.dr_level!=null?r.dr_level:'—'}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-size:10px;">${r.event_start?new Date(r.event_start).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:center;">${r.duration_mins?r.duration_mins+'m':'—'}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:center;">
+          <span style="padding:2px 7px;border-radius:8px;background:${statusBg[r.event_status]||'var(--surface2)'};color:${statusColor[r.event_status]||'var(--text-hint)'};font-size:10px;font-weight:600;">${r.event_status||'—'}</span>
+        </td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } catch(e) {
+    el.innerHTML = `<div class="sched-empty" style="color:var(--red);">Error loading events: ${e.message}</div>`;
+  }
+}
+
+// Auto-poll VTN every 5 minutes
+function startOADRPoller() {
+  loadOADREvents();
+  if (_oadrPollInterval) clearInterval(_oadrPollInterval);
+  _oadrPollInterval = setInterval(oadrPollNow, 5 * 60 * 1000);
+}
+
 </script>
 
 <!-- Fleet Health Drill-Down Side Panel -->
