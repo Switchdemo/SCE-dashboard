@@ -5457,8 +5457,19 @@ async function emergencyRestore() {
 
   let ok = 0;
   for (const d of devices) {
-    try { await sendLCToDevice(d.uid, EMERGENCY_RESTORE_HEX); ok++; }
-    catch(e) { console.error("emergency restore failed", d.uid, e); }
+    try {
+      // Send directly with X-Device-UID so the worker targets THIS device.
+      // (sendLCToDevice omits the header and would fall back to the worker's
+      // default device — the "wrong device" trap.) Standard Notehub wrap:
+      //   {"body":{"LC":"..."},"req":"note.add","sync":true}
+      const res = await fetch(PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Device-UID": d.uid },
+        body: JSON.stringify({ body: { LC: EMERGENCY_RESTORE_HEX }, req: "note.add", sync: true })
+      });
+      if (res.ok) ok++;
+      console.log(`Emergency restore → ${d.uid}: HTTP ${res.status}`);
+    } catch(e) { console.error("emergency restore failed", d.uid, e); }
   }
 
   // Log to Supabase for the audit trail
