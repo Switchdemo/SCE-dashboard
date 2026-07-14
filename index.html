@@ -2946,21 +2946,43 @@ function buildRestoreHex(relayAction) {
 }
 
 async function sendLCToDevice(uid, lcHex) {
-  // Deliver to Notehub as data.qi note in exact required format:
-  // {"body":{"LC":"..."},"req":"note.add","sync":true}
-  const payload = {
-    body: { LC: lcHex },
-    req: "note.add",
-    sync: true
-  };
+  // Deliver to Notehub as a data.qi note:
+  //   {"body":{"LC":"..."},"req":"note.add","sync":true}
+  //
+  // X-Device-UID IS REQUIRED. The worker reads this header to decide which
+  // device to address:
+  //     const deviceUID = request.headers.get("X-Device-UID") || DEVICE_UID;
+  // Without it the worker silently falls back to its hardcoded default device.
+  //
+  // This header was missing, so every caller — createSchedule,
+  // executeQueuedCommand, cancelSpecificEvent, endEvent and cancelAllEvents —
+  // was addressing the default device no matter which target was selected.
+  // Cancels and restores in particular would never have reached the device
+  // actually running the event.
+  if (!uid) { console.error("sendLCToDevice: no uid — refusing to send"); return false; }
+  if (String(uid).startsWith("group_")) {
+    // A group ID here means a caller skipped its group-expansion branch. Sending
+    // it as a device UID would address a device that does not exist.
+    console.error(`sendLCToDevice: got group id "${uid}" instead of a device UID — refusing to send`);
+    return false;
+  }
+
+  const payload = { body: { LC: lcHex }, req: "note.add", sync: true };
   try {
-    await fetch(PROXY_URL, {
+    const res = await fetch(PROXY_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Device-UID": uid          // <-- the fix
+      },
       body: JSON.stringify(payload)
     });
-    console.log(`LC sent to ${uid}:`, JSON.stringify(payload));
-  } catch(e) { console.error("LC send error", uid, e); }
+    console.log(`LC → ${uid}: HTTP ${res.status} ${JSON.stringify(payload)}`);
+    return res.ok;
+  } catch(e) {
+    console.error("LC send error", uid, e);
+    return false;
+  }
 }
 
 async function executeQueuedCommand(item) {
