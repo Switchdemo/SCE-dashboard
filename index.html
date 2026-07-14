@@ -6417,7 +6417,7 @@ async function oadrPollNow() {
   if (badge) { badge.textContent = '● Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
   oadrLog('Polling VTN…');
   try {
-    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/'poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const data = await res.json();
     const pollEl = document.getElementById('oadr-poll-status');
     if (pollEl) pollEl.textContent = `Last poll: ${new Date().toLocaleTimeString()}`;
@@ -6445,7 +6445,7 @@ function oadrSetPollInterval(mins) {
 async function oadrRegister() {
   oadrLog('Sending oadrCreatePartyRegistration…');
   try {
-    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/'register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const data = await res.json();
     oadrLog(`Registration: ${data.success ? 'OK' : 'FAILED'} — HTTP ${data.http_status}`);
   } catch(e) { oadrLog(`Registration ERROR: ${e.message}`); }
@@ -6455,7 +6455,7 @@ async function oadrOptOut() {
   if (!_oadrActiveEvent) { alert('No active OpenADR event to opt out of.'); return; }
   if (!confirm(`Opt out site from event "${_oadrActiveEvent.event_id}"?\nA restore will be sent to all devices.`)) return;
   try {
-    const res = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/'optout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: _oadrActiveEvent.event_id }) });
+    const res = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/optout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: _oadrActiveEvent.event_id }) });
     const data = await res.json();
     oadrLog(`OptOut: ${data.success ? '✅ Sent' : '❌ Failed'}`);
     await loadOADREvents();
@@ -6465,7 +6465,7 @@ async function oadrOptOut() {
 async function oadrOptIn() {
   oadrLog('Sending optIn…');
   try {
-    await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/'optin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/optin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     oadrLog('OptIn sent');
   } catch(e) { oadrLog(`OptIn ERROR: ${e.message}`); }
 }
