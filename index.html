@@ -1757,6 +1757,38 @@
         <div id="my-pw-status" style="margin-top:6px;font-size:11px;display:none;"></div>
       </div>
 
+      <!-- Emergency Restore / Nuclear Reset -->
+      <div class="sched-card" style="border:1px solid var(--red);">
+        <div class="sched-card-header">
+          <div class="sched-card-title" style="color:var(--red);">🚨 Emergency Restore</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin-bottom:12px;">
+          Sends an <strong>abrupt restore</strong> (strategy 61) with event ID <code>0xFF</code> to
+          <strong>all four relays</strong> on the selected target. Event ID <code>0xFF</code> cancels
+          <strong>every active load-control event</strong> on the device, regardless of source — DR events,
+          scheduled events, manual holds. Use this to recover a device that is stuck in an unknown or
+          unresponsive state.
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:12px;font-family:monospace;font-size:11px;">
+          Command: <span style="color:var(--red);font-weight:600;">A10B00003D8F00FF00000000E7</span>
+          <span style="color:var(--text-hint);">&nbsp;(strat 61 · all relays · cancel-all)</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;">
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Target</label>
+            <select id="reset-target" style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;">
+              <option value="all">ALL enabled devices</option>
+            </select>
+          </div>
+          <button onclick="emergencyRestore()" id="reset-btn"
+            style="padding:9px 20px;border-radius:var(--radius-sm);border:none;background:var(--red);color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">
+            🚨 Send Restore
+          </button>
+        </div>
+        <div id="reset-status" style="margin-top:10px;font-size:12px;display:none;"></div>
+      </div>
+
     </div><!-- end max-width my account -->
     </div><!-- end tab-admin-account -->
 
@@ -1921,7 +1953,7 @@ function runTabInit(name) {
   if (name === "weather")    initWeatherTab();
   if (name === "admin-users")  { updateAdminHeader(); loadUsersTable(); }
   if (name === "admin-health") { updateAdminHeader(); initFleetHealth(); }
-  if (name === "admin-account") { updateAdminHeader(); }
+  if (name === "admin-account") { updateAdminHeader(); populateResetTarget(); }
 }
 
 function switchTab(name, btn) { switchMain(name, btn); }
@@ -5351,6 +5383,100 @@ async function updateUser2FA(userId, required) {
 async function toggleUserActive(userId, currentlyActive) {
   await updateUserProfile(userId, { is_active: !currentlyActive });
   await loadUsersTable();
+}
+
+// ── Emergency Restore (nuclear reset) ─────────────────────────────────────────
+// A10B00003D8F00FF00000000E7
+//   3D = strategy 61 (abrupt restore)   8F = all four relays
+//   FF = event ID 0xFF = cancel ALL active load-control events on the device
+const EMERGENCY_RESTORE_HEX = "A10B00003D8F00FF00000000E7";
+
+// Populate the target dropdown with devices + groups. Called when the account
+// admin pane is shown.
+async function populateResetTarget() {
+  const sel = document.getElementById("reset-target");
+  if (!sel) return;
+  let opts = '<option value="all">ALL enabled devices</option>';
+  try {
+    const groups = await supabaseGet("group_names?order=group_number");
+    if (Array.isArray(groups)) {
+      groups.forEach(g => { opts += `<option value="group_${g.group_number}">Group: ${g.group_name}</option>`; });
+    }
+  } catch(e) {}
+  const real = DEVICES.filter(d => !d.uid.includes("PLACEHOLDER"))
+    .sort((a,b) => (a.name||a.uid).localeCompare(b.name||b.uid));
+  real.forEach(d => { opts += `<option value="dev:${d.uid}">${d.name || unitName(d.uid)}</option>`; });
+  sel.innerHTML = opts;
+}
+
+async function emergencyRestore() {
+  const target = document.getElementById("reset-target")?.value || "all";
+  const btn    = document.getElementById("reset-btn");
+  const msg    = document.getElementById("reset-status");
+
+  // Resolve target → device list
+  let devices = [];
+  let label   = "";
+  const real  = DEVICES.filter(d => !d.uid.includes("PLACEHOLDER"));
+
+  if (target === "all") {
+    devices = real;
+    label   = `ALL ${devices.length} enabled device(s)`;
+  } else if (target.startsWith("group_")) {
+    const gnum = parseInt(target.replace("group_", ""));
+    try {
+      const rows = await supabaseGet(`device_groups?group_number=eq.${gnum}&select=device_uid`);
+      const uids = Array.isArray(rows) ? rows.map(r => r.device_uid) : [];
+      devices = real.filter(d => uids.includes(d.uid));
+    } catch(e) {}
+    label = `Group ${gnum} (${devices.length} device(s))`;
+  } else if (target.startsWith("dev:")) {
+    const uid = target.slice(4);
+    devices = real.filter(d => d.uid === uid);
+    label   = devices[0]?.name || uid;
+  }
+
+  if (!devices.length) {
+    msg.textContent = "No devices resolved for that target.";
+    msg.style.color = "var(--red)"; msg.style.display = "block";
+    return;
+  }
+
+  // Explicit confirmation — this cancels ALL events on the target.
+  if (!confirm(
+    `EMERGENCY RESTORE\n\n` +
+    `Send abrupt restore (all relays, cancel-all) to:\n  ${label}\n\n` +
+    `Command: ${EMERGENCY_RESTORE_HEX}\n\n` +
+    `This cancels EVERY active load-control event on ${devices.length === 1 ? "this device" : "these devices"}, ` +
+    `including DR events and scheduled events. Proceed?`
+  )) return;
+
+  btn.disabled = true; btn.textContent = "Sending…";
+  msg.style.display = "block"; msg.style.color = "var(--text-hint)";
+  msg.textContent = `Sending restore to ${devices.length} device(s)…`;
+
+  let ok = 0;
+  for (const d of devices) {
+    try { await sendLCToDevice(d.uid, EMERGENCY_RESTORE_HEX); ok++; }
+    catch(e) { console.error("emergency restore failed", d.uid, e); }
+  }
+
+  // Log to Supabase for the audit trail
+  try {
+    await supabasePost("openadr_events", {
+      received_at: new Date().toISOString(),
+      event_id: `EMERGENCY-${Date.now()}`,
+      event_status: "emergency_restore",
+      source: "admin_manual",
+      dr_level: null,
+      raw_payload: `Emergency restore ${EMERGENCY_RESTORE_HEX} to ${label}`
+    });
+  } catch(e) {}
+
+  msg.style.color = "var(--green-dark)";
+  msg.textContent = `✅ Emergency restore sent to ${ok}/${devices.length} device(s): ${label}`;
+  btn.disabled = false; btn.textContent = "🚨 Send Restore";
+  setStatus("ready", `Emergency restore sent to ${ok} device(s).`);
 }
 
 async function changeMyPassword() {
