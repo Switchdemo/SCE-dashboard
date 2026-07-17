@@ -2140,7 +2140,7 @@ const deviceTimezones = {};
 // Detect timezone from lat/lon using corrected longitude bands
 // Boundaries tuned for actual North American timezone regions
 function guessTzFromCoords(lat, lon) {
-  if (lat == null || lon == null) return "America/Chicago"; // default
+  if (lat == null || lon == null) return "America/Los_Angeles"; // default
 
   // Hawaii
   if (lon < -140) return "Pacific/Honolulu";
@@ -2216,7 +2216,7 @@ async function autoDetectTimezones() {
       const timeEl = document.getElementById(`tz-time-${device.id}`);
       if (timeEl) timeEl.textContent = getCurrentTime(tz);
     } catch(e) {
-      deviceTimezones[device.id] = "America/Chicago";
+      deviceTimezones[device.id] = "America/Los_Angeles";
     }
   }
 }
@@ -2316,7 +2316,7 @@ function getBrowserTz() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch(e) {
-    return "America/Chicago";
+    return "America/Los_Angeles";
   }
 }
 
@@ -2325,7 +2325,7 @@ function populateTzSelector() {
   const browserTz = getBrowserTz();
   // Find best match in our NA_TIMEZONES list
   const match = NA_TIMEZONES.find(t => t.tz === browserTz);
-  const defaultTz = match ? browserTz : "America/Chicago";
+  const defaultTz = match ? browserTz : "America/Los_Angeles";
   const defaultLabel = match ? match.label : "Central (CT) — UTC-6/5";
 
   sel.innerHTML = NA_TIMEZONES.map(t => {
@@ -2364,10 +2364,10 @@ function onTargetTypeChange() {
 
 function getGroupMostCommonTz(groupNum) {
   const members = DEVICES.filter(d => (groupAssignments[d.uid] || []).includes(groupNum));
-  if (members.length === 0) return "America/Chicago";
+  if (members.length === 0) return "America/Los_Angeles";
   const tzCounts = {};
   members.forEach(d => {
-    const tz = deviceTimezones[d.id] || "America/Chicago";
+    const tz = deviceTimezones[d.id] || "America/Los_Angeles";
     tzCounts[tz] = (tzCounts[tz] || 0) + 1;
   });
   return Object.entries(tzCounts).sort((a,b) => b[1]-a[1])[0][0];
@@ -5671,7 +5671,7 @@ function buildControls() {
         <div><div class="device-name">${device.name}</div><div class="device-uid">${device.uid}</div></div>
         <div class="device-badge" id="badge-${device.id}"></div>
       </div>
-      ${buildTzSelector(device.id, deviceTimezones[device.id] || "America/Chicago")}
+      ${buildTzSelector(device.id, deviceTimezones[device.id] || "America/Los_Angeles")}
       <div class="relay-rows">
         ${[1,2,3,4].map(n => `
           <div class="relay-row" id="row-${device.id}-${n}" onclick="toggleRelay('${device.id}',${n})">
