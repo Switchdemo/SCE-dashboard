@@ -445,11 +445,6 @@
   <div class="status-bar">
     <div class="dot ready" id="dot"></div>
     <span id="status-text">Ready to send commands.</span>
-    <span style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-      <span style="font-size:10px;color:var(--text-hint);white-space:nowrap;">TZ:</span>
-      <select id="global-tz" style="font-size:11px;padding:2px 6px;border-radius:6px;border:0.5px solid var(--border-md);background:var(--surface2);color:var(--text-secondary);cursor:pointer;" onchange="onGlobalTzChange()"></select>
-      <span id="global-tz-clock" style="font-size:11px;font-family:monospace;color:var(--text-hint);white-space:nowrap;"></span>
-    </span>
   </div>
   <div class="events-bar" id="events-bar">
     <span class="events-bar-label">Events:</span>
@@ -1829,6 +1824,28 @@
         <div id="my-pw-status" style="margin-top:6px;font-size:11px;display:none;"></div>
       </div>
 
+      <!-- Dashboard Settings -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">Dashboard Settings</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;">
+          <div>
+            <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Dashboard Timezone</label>
+            <p style="font-size:11px;color:var(--text-secondary);margin:0 0 6px 0;">
+              All times across the dashboard — events, schedules, device readings, and logs — will display in this timezone.
+            </p>
+            <select id="global-tz" onchange="onGlobalTzChange()"
+              style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:12px;cursor:pointer;">
+            </select>
+          </div>
+          <div style="text-align:right;">
+            <span id="global-tz-clock" style="font-size:18px;font-family:monospace;color:var(--text-primary);font-weight:600;white-space:nowrap;"></span>
+            <div style="font-size:10px;color:var(--text-hint);margin-top:2px;" id="global-tz-label">Pacific Time</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Emergency Restore / Nuclear Reset -->
       <div class="sched-card" style="border:1px solid var(--red);">
         <div class="sched-card-header">
@@ -2196,6 +2213,12 @@ function initGlobalTzPicker() {
 function onGlobalTzChange() {
   const sel = document.getElementById("global-tz");
   if (sel) globalTimezone = sel.value;
+  // Update the label to show the friendly name
+  const label = document.getElementById("global-tz-label");
+  if (label) {
+    const match = NA_TIMEZONES.find(t => t.tz === globalTimezone);
+    label.textContent = match ? match.label.split("—")[0].trim() : globalTimezone;
+  }
   updateGlobalClock();
 }
 
