@@ -5134,13 +5134,18 @@ async function onSignedIn(session) {
   // Load devices from DB before showing the UI — everything depends on DEVICES[]
   await loadDevicesFromDB();
 
-  // Build device UI now that DEVICES[] is populated
-  buildControls();
-  buildDataCards();
-
+  // Show the dashboard immediately and kick off the Summary tab first —
+  // it's the default landing page and the user sees it while the heavier
+  // device grids build in the background.
   hideLoginOverlay();
   applyRolePermissions(currentUserRole);
   updateAdminHeader();
+  initSummaryTab();
+
+  // Build device controls and data cards (heavier, but not visible on the
+  // Summary tab so the user doesn't wait on them).
+  buildControls();
+  buildDataCards();
 }
 
 function showLoginOverlay() {
@@ -6067,8 +6072,7 @@ autoDetectTimezones();
 loadEventsBar();
 initHeaderWeather();
 initAuth();
-// Init summary tab since it's the default active tab
-setTimeout(() => initSummaryTab(), 100);
+// Summary tab init is handled in onSignedIn() — runs immediately after device load
 
 // ── Device Management (Admin) ─────────────────────────────────────────────────
 
