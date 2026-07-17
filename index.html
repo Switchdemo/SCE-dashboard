@@ -5134,6 +5134,10 @@ async function onSignedIn(session) {
   // Load devices from DB before showing the UI — everything depends on DEVICES[]
   await loadDevicesFromDB();
 
+  // Build device UI now that DEVICES[] is populated
+  buildControls();
+  buildDataCards();
+
   hideLoginOverlay();
   applyRolePermissions(currentUserRole);
   updateAdminHeader();
@@ -6057,8 +6061,8 @@ async function loadHistory() {
   } catch(e) { tbody.innerHTML = `<tr><td colspan="11" class="no-data">Error loading history</td></tr>`; }
 }
 
-buildControls();
-buildDataCards();
+// buildControls() and buildDataCards() are called in onSignedIn() after
+// loadDevicesFromDB() populates the DEVICES array.
 autoDetectTimezones();
 loadEventsBar();
 initHeaderWeather();
@@ -6197,8 +6201,10 @@ async function addDevice() {
     document.getElementById("add-device-form").style.display = "none";
     setStatus("success", `✅ Device "${name}" added`);
 
-    // Reload devices globally and refresh the management table
+    // Reload devices globally and refresh the management table + controls
     await loadDevicesFromDB();
+    buildControls();
+    buildDataCards();
     await loadDeviceManagement();
   } catch(e) {
     if (errEl) { errEl.textContent = "Error: " + e.message; errEl.style.display = "block"; }
@@ -6213,6 +6219,8 @@ async function toggleDeviceEnabled(uid, currentlyEnabled) {
     await supabasePatch(`devices?uid=eq.${encodeURIComponent(uid)}`, { enabled: !currentlyEnabled });
     setStatus("success", `✅ Device ${action}d: ${unitName(uid)}`);
     await loadDevicesFromDB();
+    buildControls();
+    buildDataCards();
     await loadDeviceManagement();
   } catch(e) {
     setStatus("error", `Failed to ${action} device: ${e.message}`);
@@ -6234,6 +6242,8 @@ async function deleteDevice(uid, name) {
 
     setStatus("success", `✅ Device "${name}" deleted`);
     await loadDevicesFromDB();
+    buildControls();
+    buildDataCards();
     await loadDeviceManagement();
   } catch(e) {
     setStatus("error", `Failed to delete: ${e.message}`);
