@@ -438,6 +438,7 @@
   </div>
   <div class="sub-tabs" id="sub-tabs-admin" style="display:none;">
     <button class="sub-tab-btn active" id="sub-admin-users" onclick="switchSub('admin','admin-users',this)">User Management</button>
+    <button class="sub-tab-btn" id="sub-admin-devices" onclick="switchSub('admin','admin-devices',this)">Device Management</button>
     <button class="sub-tab-btn" id="sub-admin-health" onclick="switchSub('admin','admin-health',this)">Fleet Health</button>
     <button class="sub-tab-btn" id="sub-admin-account" onclick="switchSub('admin','admin-account',this)">My Account</button>
   </div>
@@ -1560,6 +1561,72 @@
 
     </div><!-- end tab-admin-users -->
 
+    <!-- ── Admin: Device Management ── -->
+    <div class="admin-pane" id="tab-admin-devices" style="display:none;">
+    <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Add Device Card -->
+      <div class="sched-card">
+        <div class="sched-card-header">
+          <div class="sched-card-title">Device Management</div>
+          <button class="queue-refresh" onclick="showAddDeviceForm()">+ Add Device</button>
+        </div>
+
+        <!-- Add Device Form (hidden by default) -->
+        <div id="add-device-form" style="display:none;background:var(--surface2);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1rem;border:0.5px solid var(--border-md);">
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:10px;">New Device</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Device UID</label>
+              <input type="text" id="new-device-uid" placeholder="dev:860322060777247"
+                style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;font-family:monospace;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Friendly Name <span style="color:var(--text-hint);font-weight:normal;">(optional)</span></label>
+              <input type="text" id="new-device-name" placeholder="Auto-generates from UID"
+                style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Location <span style="color:var(--text-hint);font-weight:normal;">(optional)</span></label>
+              <input type="text" id="new-device-location" placeholder="e.g. Building A"
+                style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Type</label>
+              <select id="new-device-type" class="sched-select" style="width:100%;font-size:12px;">
+                <option value="relay">Relay</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button onclick="addDevice()"
+              style="padding:7px 16px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:12px;font-weight:600;cursor:pointer;">
+              Add Device
+            </button>
+            <button onclick="document.getElementById('add-device-form').style.display='none'"
+              style="padding:7px 16px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:transparent;font-size:12px;cursor:pointer;">
+              Cancel
+            </button>
+          </div>
+          <div id="add-device-error" style="margin-top:8px;font-size:11px;color:var(--red);display:none;"></div>
+        </div>
+
+        <!-- Device count summary -->
+        <div style="display:flex;gap:16px;margin-bottom:12px;font-size:12px;color:var(--text-secondary);">
+          <span id="dm-count-total">—</span>
+          <span id="dm-count-enabled" style="color:var(--green-dark);">—</span>
+          <span id="dm-count-disabled" style="color:var(--text-hint);">—</span>
+        </div>
+
+        <!-- Devices Table -->
+        <div id="devices-table-container">
+          <div class="sched-empty">Loading devices...</div>
+        </div>
+      </div>
+
+    </div><!-- end max-width device mgmt -->
+    </div><!-- end tab-admin-devices -->
+
     <!-- ── Admin: Fleet Health ── -->
     <div class="admin-pane" id="tab-admin-health" style="display:none;">
     <div style="max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:16px;padding:1rem;">
@@ -1802,7 +1869,11 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 function unitName(uid) { return "Unit " + uid.slice(-4); }
 
-const DEVICES = [
+// Devices are loaded dynamically from Supabase. Seeded on first load.
+let DEVICES = [];
+
+// Hardcoded seed list — inserted into Supabase on first load if not already present.
+const SEED_DEVICES = [
   { id: "device0",  uid: "dev:868032061567966" },
   { id: "device1",  uid: "dev:868032061450171" },
   { id: "device2",  uid: "dev:868032061567743" },
@@ -1816,7 +1887,60 @@ const DEVICES = [
   { id: "device11", uid: "dev:868032061497289" },
   { id: "device12", uid: "dev:860322060775878" },
   { id: "device13", uid: "dev:868032061596023" },
-].map(d => ({ ...d, name: unitName(d.uid) }));
+];
+
+async function loadDevicesFromDB() {
+  try {
+    let rows = await supabaseGet("devices?order=created_at.asc");
+    if (!Array.isArray(rows)) rows = [];
+
+    // Seed on first load: if fewer devices in DB than in SEED_DEVICES, insert missing ones
+    if (rows.length < SEED_DEVICES.length) {
+      const existingUids = new Set(rows.map(r => r.uid));
+      const missing = SEED_DEVICES.filter(s => !existingUids.has(s.uid));
+      if (missing.length) {
+        console.log(`[Devices] Seeding ${missing.length} devices into Supabase...`);
+        for (const s of missing) {
+          await supabaseUpsert("devices", {
+            id:   s.id,
+            uid:  s.uid,
+            name: unitName(s.uid),
+            type: "relay",
+            enabled: true
+          }, "uid");
+        }
+        // Re-fetch after seeding
+        rows = await supabaseGet("devices?order=created_at.asc");
+        if (!Array.isArray(rows)) rows = [];
+      }
+    }
+
+    // Build DEVICES array — only enabled devices participate in controls/dispatch
+    DEVICES = rows
+      .filter(r => r.enabled !== false)
+      .map((r, i) => ({
+        id:       r.id || `device${i}`,
+        uid:      r.uid,
+        name:     r.name || unitName(r.uid),
+        location: r.location || null,
+        type:     r.type || "relay"
+      }));
+
+    // Rebuild relay state for new device list
+    DEVICES.forEach(d => {
+      if (!relayState[d.id]) relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false };
+    });
+
+    console.log(`[Devices] Loaded ${DEVICES.length} enabled devices (${rows.length} total in DB)`);
+    return rows; // return all rows (enabled + disabled) for device management UI
+  } catch(e) {
+    console.error("[Devices] Failed to load from DB:", e);
+    // Fallback to seed list so the dashboard isn't empty
+    DEVICES = SEED_DEVICES.map(d => ({ ...d, name: unitName(d.uid) }));
+    DEVICES.forEach(d => { relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false }; });
+    return [];
+  }
+}
 
 const COMMANDS = {
   "1_on":   {"body":{"LC":"A10B000001810001000000002B"},"req":"note.add","sync":true},
@@ -1832,7 +1956,6 @@ const COMMANDS = {
 };
 
 const relayState = {};
-DEVICES.forEach(d => { relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false }; });
 let busy = false;
 let map, mapInitialized = false;
 const mapMarkers = {};
@@ -1951,8 +2074,9 @@ function runTabInit(name) {
   if (name === "groups")     loadGroups();
   if (name === "settings")   initSettingsTab();
   if (name === "weather")    initWeatherTab();
-  if (name === "admin-users")  { updateAdminHeader(); loadUsersTable(); }
-  if (name === "admin-health") { updateAdminHeader(); initFleetHealth(); }
+  if (name === "admin-users")   { updateAdminHeader(); loadUsersTable(); }
+  if (name === "admin-devices") { updateAdminHeader(); loadDeviceManagement(); }
+  if (name === "admin-health")  { updateAdminHeader(); initFleetHealth(); }
   if (name === "admin-account") { updateAdminHeader(); populateResetTarget(); }
 }
 
@@ -5007,6 +5131,9 @@ async function onSignedIn(session) {
     .update({ last_login: new Date().toISOString() })
     .eq("id", currentUser.id);
 
+  // Load devices from DB before showing the UI — everything depends on DEVICES[]
+  await loadDevicesFromDB();
+
   hideLoginOverlay();
   applyRolePermissions(currentUserRole);
   updateAdminHeader();
@@ -5938,6 +6065,180 @@ initHeaderWeather();
 initAuth();
 // Init summary tab since it's the default active tab
 setTimeout(() => initSummaryTab(), 100);
+
+// ── Device Management (Admin) ─────────────────────────────────────────────────
+
+function showAddDeviceForm() {
+  document.getElementById("add-device-form").style.display = "block";
+  document.getElementById("new-device-uid").value = "";
+  document.getElementById("new-device-name").value = "";
+  document.getElementById("new-device-location").value = "";
+  const errEl = document.getElementById("add-device-error");
+  if (errEl) { errEl.style.display = "none"; errEl.textContent = ""; }
+}
+
+async function loadDeviceManagement() {
+  const container = document.getElementById("devices-table-container");
+  if (!container) return;
+
+  let rows = [];
+  try {
+    rows = await supabaseGet("devices?order=created_at.asc");
+    if (!Array.isArray(rows)) rows = [];
+  } catch(e) {
+    container.innerHTML = '<div class="sched-empty">Failed to load devices.</div>';
+    return;
+  }
+
+  // Update counts
+  const enabled = rows.filter(r => r.enabled !== false);
+  const disabled = rows.filter(r => r.enabled === false);
+  const totalEl = document.getElementById("dm-count-total");
+  const enEl    = document.getElementById("dm-count-enabled");
+  const disEl   = document.getElementById("dm-count-disabled");
+  if (totalEl) totalEl.textContent = `${rows.length} total`;
+  if (enEl)    enEl.textContent    = `${enabled.length} enabled`;
+  if (disEl)   disEl.textContent   = `${disabled.length} disabled`;
+
+  if (!rows.length) {
+    container.innerHTML = '<div class="sched-empty">No devices found. Click "+ Add Device" to register one.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="history-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Device UID</th>
+            <th>Type</th>
+            <th>Location</th>
+            <th>Status</th>
+            <th>Added</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr style="${r.enabled === false ? 'opacity:0.5;' : ''}">
+              <td style="font-weight:600;">${r.name || unitName(r.uid)}</td>
+              <td style="font-family:monospace;font-size:10px;">${r.uid}</td>
+              <td>${r.type || 'relay'}</td>
+              <td>${r.location || '—'}</td>
+              <td>
+                <span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;
+                  background:${r.enabled !== false ? 'var(--green-bg)' : 'var(--surface2)'};
+                  color:${r.enabled !== false ? 'var(--green-dark)' : 'var(--text-hint)'};">
+                  ${r.enabled !== false ? 'Enabled' : 'Disabled'}
+                </span>
+              </td>
+              <td>${r.created_at ? new Date(r.created_at).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+              <td style="text-align:right;">
+                <button onclick="toggleDeviceEnabled('${r.uid}', ${r.enabled !== false})"
+                  style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--border-md);
+                    background:var(--surface);color:${r.enabled !== false ? 'var(--amber)' : 'var(--green-dark)'};cursor:pointer;margin-right:4px;">
+                  ${r.enabled !== false ? 'Disable' : 'Enable'}
+                </button>
+                <button onclick="deleteDevice('${r.uid}', '${(r.name || unitName(r.uid)).replace(/'/g, "\\'")}')"
+                  class="sched-delete-btn">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function addDevice() {
+  const uidInput = document.getElementById("new-device-uid");
+  const nameInput = document.getElementById("new-device-name");
+  const locInput  = document.getElementById("new-device-location");
+  const typeInput = document.getElementById("new-device-type");
+  const errEl     = document.getElementById("add-device-error");
+
+  const uid  = uidInput?.value?.trim();
+  const name = nameInput?.value?.trim() || unitName(uid || "");
+  const loc  = locInput?.value?.trim() || null;
+  const type = typeInput?.value || "relay";
+
+  if (!uid) {
+    if (errEl) { errEl.textContent = "Device UID is required."; errEl.style.display = "block"; }
+    return;
+  }
+  if (!uid.startsWith("dev:")) {
+    if (errEl) { errEl.textContent = 'UID should start with "dev:" (e.g. dev:860322060777247)'; errEl.style.display = "block"; }
+    return;
+  }
+
+  // Check for duplicate
+  const existing = await supabaseGet(`devices?uid=eq.${encodeURIComponent(uid)}`);
+  if (Array.isArray(existing) && existing.length) {
+    if (errEl) { errEl.textContent = "A device with this UID already exists."; errEl.style.display = "block"; }
+    return;
+  }
+
+  const deviceId = "device_" + uid.slice(-6);
+  try {
+    const res = await supabasePost("devices", {
+      id:       deviceId,
+      uid:      uid,
+      name:     name,
+      type:     type,
+      location: loc,
+      enabled:  true
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      if (errEl) { errEl.textContent = "Failed to add: " + err; errEl.style.display = "block"; }
+      return;
+    }
+
+    document.getElementById("add-device-form").style.display = "none";
+    setStatus("success", `✅ Device "${name}" added`);
+
+    // Reload devices globally and refresh the management table
+    await loadDevicesFromDB();
+    await loadDeviceManagement();
+  } catch(e) {
+    if (errEl) { errEl.textContent = "Error: " + e.message; errEl.style.display = "block"; }
+  }
+}
+
+async function toggleDeviceEnabled(uid, currentlyEnabled) {
+  const action = currentlyEnabled ? "disable" : "enable";
+  if (!confirm(`${currentlyEnabled ? 'Disable' : 'Enable'} device ${unitName(uid)} (${uid})?\n\n${currentlyEnabled ? 'Disabled devices will not receive DR commands or appear in controls.' : 'Device will be re-added to controls and DR dispatch.'}`)) return;
+
+  try {
+    await supabasePatch(`devices?uid=eq.${encodeURIComponent(uid)}`, { enabled: !currentlyEnabled });
+    setStatus("success", `✅ Device ${action}d: ${unitName(uid)}`);
+    await loadDevicesFromDB();
+    await loadDeviceManagement();
+  } catch(e) {
+    setStatus("error", `Failed to ${action} device: ${e.message}`);
+  }
+}
+
+async function deleteDevice(uid, name) {
+  if (!confirm(`Permanently delete "${name}" (${uid})?\n\nThis removes it from all groups and dispatch targets. This cannot be undone.`)) return;
+  if (!confirm(`Are you sure? This will delete:\n• The device record\n• All group memberships\n\nType "delete" in the next prompt to confirm.`)) return;
+
+  const typed = prompt('Type "delete" to confirm permanent removal:');
+  if (typed?.toLowerCase() !== "delete") { setStatus("ready", "Delete cancelled."); return; }
+
+  try {
+    // Remove from groups first
+    await supabaseDelete("device_groups", `device_uid=eq.${encodeURIComponent(uid)}`);
+    // Delete the device
+    await supabaseDelete("devices", `uid=eq.${encodeURIComponent(uid)}`);
+
+    setStatus("success", `✅ Device "${name}" deleted`);
+    await loadDevicesFromDB();
+    await loadDeviceManagement();
+  } catch(e) {
+    setStatus("error", `Failed to delete: ${e.message}`);
+  }
+}
 
 // ── Fleet Health ──────────────────────────────────────────────────────────────
 
