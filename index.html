@@ -445,6 +445,11 @@
   <div class="status-bar">
     <div class="dot ready" id="dot"></div>
     <span id="status-text">Ready to send commands.</span>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+      <span style="font-size:10px;color:var(--text-hint);white-space:nowrap;">TZ:</span>
+      <select id="global-tz" style="font-size:11px;padding:2px 6px;border-radius:6px;border:0.5px solid var(--border-md);background:var(--surface2);color:var(--text-secondary);cursor:pointer;" onchange="onGlobalTzChange()"></select>
+      <span id="global-tz-clock" style="font-size:11px;font-family:monospace;color:var(--text-hint);white-space:nowrap;"></span>
+    </span>
   </div>
   <div class="events-bar" id="events-bar">
     <span class="events-bar-label">Events:</span>
@@ -2135,7 +2140,8 @@ const NA_TIMEZONES = [
 ];
 
 // Store timezone selections per device { device_id: tz_string }
-const deviceTimezones = {};
+// REPLACED: single global timezone — all devices use the same zone
+let globalTimezone = "America/Los_Angeles";
 
 // Detect timezone from lat/lon using corrected longitude bands
 // Boundaries tuned for actual North American timezone regions
@@ -2173,52 +2179,37 @@ function getCurrentTime(tz) {
   return new Date().toLocaleTimeString("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function buildTzSelector(deviceId, selectedTz) {
-  const opts = NA_TIMEZONES.map(t =>
-    `<option value="${t.tz}" ${t.tz === selectedTz ? "selected" : ""}>${t.label}</option>`
+// Per-device selectors replaced by global — these are no-ops now but kept for compatibility
+function buildTzSelector() { return ""; }
+function onTzChange() {}
+
+// Initialize the global timezone picker in the status bar
+function initGlobalTzPicker() {
+  const sel = document.getElementById("global-tz");
+  if (!sel) return;
+  sel.innerHTML = NA_TIMEZONES.map(t =>
+    `<option value="${t.tz}" ${t.tz === globalTimezone ? "selected" : ""}>${t.label}</option>`
   ).join("");
-  return `<div class="tz-row">
-    <span class="tz-label">TZ:</span>
-    <select class="tz-select" id="tz-${deviceId}" onchange="onTzChange('${deviceId}')">
-      ${opts}
-    </select>
-    <span class="tz-time" id="tz-time-${deviceId}">${getCurrentTime(selectedTz)}</span>
-  </div>`;
+  updateGlobalClock();
 }
 
-function onTzChange(deviceId) {
-  const sel = document.getElementById(`tz-${deviceId}`);
-  deviceTimezones[deviceId] = sel.value;
-  document.getElementById(`tz-time-${deviceId}`).textContent = getCurrentTime(sel.value);
+function onGlobalTzChange() {
+  const sel = document.getElementById("global-tz");
+  if (sel) globalTimezone = sel.value;
+  updateGlobalClock();
 }
 
-// Update all timezone clocks every second
-setInterval(() => {
-  DEVICES.forEach(d => {
-    const el = document.getElementById(`tz-time-${d.id}`);
-    if (el && deviceTimezones[d.id]) {
-      el.textContent = getCurrentTime(deviceTimezones[d.id]);
-    }
-  });
-}, 1000);
+function updateGlobalClock() {
+  const el = document.getElementById("global-tz-clock");
+  if (el) el.textContent = getCurrentTime(globalTimezone);
+}
 
-// Auto-detect timezone from latest device location data
+// Update global clock every second
+setInterval(updateGlobalClock, 1000);
+
+// Auto-detect is a no-op now — timezone is set globally
 async function autoDetectTimezones() {
-  for (const device of DEVICES) {
-    try {
-      const rows = await supabaseGet(`device_readings?device_uid=eq.${encodeURIComponent(device.uid)}&order=recorded_at.desc&limit=1&select=lat,lon`);
-      const row = rows?.[0] ?? null;
-      const tz = guessTzFromCoords(row?.lat, row?.lon);
-      deviceTimezones[device.id] = tz;
-      // Update selector if already rendered
-      const sel = document.getElementById(`tz-${device.id}`);
-      if (sel) sel.value = tz;
-      const timeEl = document.getElementById(`tz-time-${device.id}`);
-      if (timeEl) timeEl.textContent = getCurrentTime(tz);
-    } catch(e) {
-      deviceTimezones[device.id] = "America/Los_Angeles";
-    }
-  }
+  initGlobalTzPicker();
 }
 
 
@@ -2363,35 +2354,15 @@ function onTargetTypeChange() {
 }
 
 function getGroupMostCommonTz(groupNum) {
-  const members = DEVICES.filter(d => (groupAssignments[d.uid] || []).includes(groupNum));
-  if (members.length === 0) return "America/Los_Angeles";
-  const tzCounts = {};
-  members.forEach(d => {
-    const tz = deviceTimezones[d.id] || "America/Los_Angeles";
-    tzCounts[tz] = (tzCounts[tz] || 0) + 1;
-  });
-  return Object.entries(tzCounts).sort((a,b) => b[1]-a[1])[0][0];
+  return globalTimezone;
 }
 
 function updateSchedulerTimezone() {
-  const type = document.getElementById("sf-target-type").value;
-  const targetSel = document.getElementById("sf-target");
   const tzSel = document.getElementById("sf-timezone");
-  if (!tzSel || !targetSel || targetSel.options.length === 0) return;
-  const targetVal = targetSel.value;
-  if (!targetVal) return;
-  let tz = getBrowserTz();
-  if (type === "device") {
-    const device = DEVICES.find(d => d.uid === targetVal);
-    if (device && deviceTimezones[device.id]) tz = deviceTimezones[device.id];
-  } else {
-    const gNum = parseInt(targetVal.replace("group_", ""));
-    if (gNum) tz = getGroupMostCommonTz(gNum);
-  }
-  // Rebuild options with new default marked
-  const browserTz = getBrowserTz();
+  if (!tzSel) return;
+  // Rebuild options with global timezone as default
   tzSel.innerHTML = NA_TIMEZONES.map(t => {
-    const isSelected = t.tz === tz;
+    const isSelected = t.tz === globalTimezone;
     const isBrowser = t.tz === browserTz;
     let suffix = "";
     if (isSelected && isBrowser) suffix = " ★ Default";
@@ -5671,7 +5642,6 @@ function buildControls() {
         <div><div class="device-name">${device.name}</div><div class="device-uid">${device.uid}</div></div>
         <div class="device-badge" id="badge-${device.id}"></div>
       </div>
-      ${buildTzSelector(device.id, deviceTimezones[device.id] || "America/Los_Angeles")}
       <div class="relay-rows">
         ${[1,2,3,4].map(n => `
           <div class="relay-row" id="row-${device.id}-${n}" onclick="toggleRelay('${device.id}',${n})">
