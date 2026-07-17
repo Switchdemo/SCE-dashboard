@@ -2129,7 +2129,7 @@ async function loadMap() {
     const online = isOnline(row);
     if (row?.lat && row?.lon) {
       const marker = L.marker([row.lat, row.lon], { icon: makeIcon(online) });
-      marker.bindPopup(`<div style="font-family:-apple-system,sans-serif;min-width:150px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${device.name}</div><div style="font-size:11px;color:#5f5e5a;margin-bottom:6px;">${row.location ?? ""}</div><div style="display:flex;align-items:center;gap:5px;"><div style="width:7px;height:7px;border-radius:50%;background:${online?"#1D9E75":"#888780"}"></div><span style="font-size:11px;font-weight:500;color:${online?"#0F6E56":"#888780"}">${online?"Online":"No recent data"}</span></div><div style="font-size:10px;color:#888780;margin-top:4px;">Last seen: ${new Date(row.recorded_at).toLocaleString()}</div></div>`);
+      marker.bindPopup(`<div style="font-family:-apple-system,sans-serif;min-width:150px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${device.name}</div><div style="font-size:11px;color:#5f5e5a;margin-bottom:6px;">${row.location ?? ""}</div><div style="display:flex;align-items:center;gap:5px;"><div style="width:7px;height:7px;border-radius:50%;background:${online?"#1D9E75":"#888780"}"></div><span style="font-size:11px;font-weight:500;color:${online?"#0F6E56":"#888780"}">${online?"Online":"No recent data"}</span></div><div style="font-size:10px;color:#888780;margin-top:4px;">Last seen: ${fmtDT(new Date(row.recorded_at))}</div></div>`);
       marker.addTo(map);
       mapMarkers[device.uid] = marker;
       pinned.push(marker);
@@ -2159,6 +2159,46 @@ const NA_TIMEZONES = [
 // Store timezone selections per device { device_id: tz_string }
 // REPLACED: single global timezone — all devices use the same zone
 let globalTimezone = "America/Los_Angeles";
+
+// ── Global date/time formatting — always uses globalTimezone ────────────────
+function fmtDT(d) {
+  if (!d) return "—";
+  if (!(d instanceof Date)) d = new Date(d);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString("en-US", { timeZone: globalTimezone });
+}
+function fmtDate(d) {
+  if (!d) return "—";
+  if (!(d instanceof Date)) d = new Date(d);
+  if (isNaN(d)) return "—";
+  return d.toLocaleDateString("en-US", { timeZone: globalTimezone, month: "short", day: "numeric", year: "numeric" });
+}
+function fmtTime(d) {
+  if (!d) return "—";
+  if (!(d instanceof Date)) d = new Date(d);
+  if (isNaN(d)) return "—";
+  return d.toLocaleTimeString("en-US", { timeZone: globalTimezone, hour: "2-digit", minute: "2-digit" });
+}
+function fmtShortDT(d) {
+  if (!d) return "—";
+  if (!(d instanceof Date)) d = new Date(d);
+  if (isNaN(d)) return "—";
+  return d.toLocaleDateString("en-US", { timeZone: globalTimezone, month: "short", day: "numeric" }) + " " +
+         d.toLocaleTimeString("en-US", { timeZone: globalTimezone, hour: "2-digit", minute: "2-digit" });
+}
+
+// ── Timezone persistence ────────────────────────────────────────────────────
+function loadSavedTimezone() {
+  try {
+    const saved = localStorage.getItem("sce_dashboard_tz");
+    if (saved && NA_TIMEZONES.some(t => t.tz === saved)) {
+      globalTimezone = saved;
+    }
+  } catch(e) {}
+}
+function saveTimezone() {
+  try { localStorage.setItem("sce_dashboard_tz", globalTimezone); } catch(e) {}
+}
 
 // Detect timezone from lat/lon using corrected longitude bands
 // Boundaries tuned for actual North American timezone regions
@@ -2202,24 +2242,31 @@ function onTzChange() {}
 
 // Initialize the global timezone picker in the status bar
 function initGlobalTzPicker() {
+  loadSavedTimezone();
   const sel = document.getElementById("global-tz");
   if (!sel) return;
   sel.innerHTML = NA_TIMEZONES.map(t =>
     `<option value="${t.tz}" ${t.tz === globalTimezone ? "selected" : ""}>${t.label}</option>`
   ).join("");
   updateGlobalClock();
+  updateTzLabel();
 }
 
 function onGlobalTzChange() {
   const sel = document.getElementById("global-tz");
   if (sel) globalTimezone = sel.value;
-  // Update the label to show the friendly name
+  saveTimezone();
+  updateGlobalClock();
+  updateTzLabel();
+  setStatus("success", `✅ Timezone set to ${globalTimezone}`);
+}
+
+function updateTzLabel() {
   const label = document.getElementById("global-tz-label");
   if (label) {
     const match = NA_TIMEZONES.find(t => t.tz === globalTimezone);
     label.textContent = match ? match.label.split("—")[0].trim() : globalTimezone;
   }
-  updateGlobalClock();
 }
 
 function updateGlobalClock() {
@@ -2583,7 +2630,7 @@ async function loadSchedules() {
   };
 
   list.innerHTML = rows.map(s => {
-    const fireStr = s.fire_at ? new Date(s.fire_at).toLocaleString() : "—";
+    const fireStr = s.fire_at ? fmtDT(new Date(s.fire_at)) : "—";
     const dur     = s.duration_minutes ? formatDuration(s.duration_minutes) : "—";
     const sc      = statusColors[s.status] || "var(--text-secondary)";
     const isCancellable = ["sent","received","started","pending"].includes(s.status);
@@ -2732,8 +2779,8 @@ async function loadDeviceEvents() {
         const endAt      = fireAt ? new Date(fireAt.getTime() + durationMs) : null;
         const sc         = statusClass[r.lc_status === 0 ? "received" : r.lc_status === 1 ? "started" : r.lc_status === 2 ? "ended" : r.lc_status === 6 ? "cancelled" : "sent"] || "sent";
         const icon       = statusIcon[sc] || "📡";
-        const fireStr    = fireAt ? fireAt.toLocaleString() : "—";
-        const endStr     = endAt  ? endAt.toLocaleString()  : "—";
+        const fireStr    = fireAt ? fmtDT(fireAt) : "—";
+        const endStr     = endAt  ? fmtDT(endAt)  : "—";
         const dur        = r.duration_minutes ? formatDuration(r.duration_minutes) : "—";
         const rData      = encodeURIComponent(JSON.stringify({ type:"queue", item:r._raw || r, queue:r }));
         return `<div class="queue-item ${sc}" style="cursor:pointer;" onclick="showDeviceEventDetail(JSON.parse(decodeURIComponent('${rData}')))">
@@ -3202,7 +3249,7 @@ function parseLCHex(hex) {
 
   const reps = dataByte + 1;
   const strat = STRATEGY_TABLE[stratNum];
-  const startDate = startTime > 0 ? new Date(startTime * 1000).toLocaleString() : "Immediate";
+  const startDate = startTime > 0 ? fmtDT(new Date(startTime * 1000)) : "Immediate";
 
   // Verify checksum
   let xor = 0;
@@ -3427,7 +3474,7 @@ function parseLCResponseHex(hex) {
   const checksumOk = rspXor === checksum;
 
   const statusLabel = LC_STATUS_LABELS[statusNibble] || `Unknown (${statusNibble})`;
-  const tsDate = timestamp > 0 ? new Date(timestamp * 1000).toLocaleString() : "—";
+  const tsDate = timestamp > 0 ? fmtDT(new Date(timestamp * 1000)) : "—";
 
   return {
     header:    `0x${header.toString(16).toUpperCase()} (Response)`,
@@ -3632,8 +3679,8 @@ async function loadHistoricEvents() {
         <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);">${r.name || "—"}</td>
         <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);">${r.target_name || "—"}</td>
         <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);">${RELAY_ACTION_LABELS[r.relay_action] || r.relay_action || "—"}</td>
-        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${r.fire_at ? new Date(r.fire_at).toLocaleString() : "—"}</td>
-        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${r.fired_at ? new Date(r.fired_at).toLocaleString() : "—"}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${r.fire_at ? fmtDT(new Date(r.fire_at)) : "—"}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${r.fired_at ? fmtDT(new Date(r.fired_at)) : "—"}</td>
         <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);"><span class="queue-status ${r.status}">${r.status}</span></td>
         <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);">${(r.lc_mode||"—").toUpperCase()}</td>
         <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);">${r.lc_strategy || "—"}</td>
@@ -3664,8 +3711,8 @@ async function exportHistoricEvents() {
       r.lc_strategy || "",
       r.lc_reps || "",
       r.duration_minutes ? formatDuration(r.duration_minutes) : "",
-      r.fire_at ? new Date(r.fire_at).toLocaleString() : "",
-      r.fired_at ? new Date(r.fired_at).toLocaleString() : "",
+      r.fire_at ? fmtDT(new Date(r.fire_at)) : "",
+      r.fired_at ? fmtDT(new Date(r.fired_at)) : "",
       r.status || ""
     ].map(v => `"${v}"`).join(","));
     const csv = [headers.join(","), ...csvRows].join("\n");
@@ -3692,7 +3739,7 @@ async function exportHistory() {
     const csvRows = rows.map(r => {
       const devName = DEVICES.find(d => d.uid === r.device_uid)?.name ?? unitName(r.device_uid);
       return [
-        new Date(r.recorded_at).toLocaleString(),
+        fmtDT(new Date(r.recorded_at)),
         devName,
         r.relay_status_r1 > 0 ? "On" : "Off",
         r.relay_status_r2 > 0 ? "On" : "Off",
@@ -3736,8 +3783,7 @@ async function loadCharts() {
 
   const labels = rows.map(r => {
     const d = new Date(r.recorded_at);
-    return d.toLocaleDateString("en-US", { month:"short", day:"numeric" }) + " " +
-           d.toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit" });
+    return fmtShortDT(d);
   });
 
   buildChart("chart-voltage", "Voltage",      labels, rows.map(r => r.voltage != null ? r.voltage / 10 : null),        "#378ADD");
@@ -3783,7 +3829,7 @@ async function loadEventsBar() {
           : "sent";
 
         const timeStr = formatTimeAMPM(new Date(q.fire_at).toTimeString().slice(0,5));
-        const dateStr = fireAt.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+        const dateStr = fireAt.toLocaleDateString("en-US", { timeZone: globalTimezone, month:"short", day:"numeric" });
         const activeLabel = isActive ? "🟢 Active" : `📅 ${dateStr} ${timeStr}`;
 
         const qData = encodeURIComponent(JSON.stringify({ type:'queue', item:q }));
@@ -3848,8 +3894,8 @@ function showEventDetail(data) {
   };
   const statusStyle = statusColors[item.status] || "";
 
-  const fireTime = item.fire_at ? new Date(item.fire_at).toLocaleString() : "—";
-  const sentTime = item.fired_at ? new Date(item.fired_at).toLocaleString() : "—";
+  const fireTime = item.fire_at ? fmtDT(new Date(item.fire_at)) : "—";
+  const sentTime = item.fired_at ? fmtDT(new Date(item.fired_at)) : "—";
   const endTime  = item.action_time && item.duration_minutes ? calcEndTime(item.action_time, item.duration_minutes) : "—";
   const tzShort  = item.timezone ? item.timezone.split("/").pop().replace("_"," ") : "";
 
@@ -3968,7 +4014,7 @@ async function loadProgramSummary() {
     // Event received indicator
     const hasEvent = !!evData;
     const eventStatus = hasEvent
-      ? `<span style="color:var(--green-dark);font-weight:500;">${evData.lc_status_label || "Received"}</span><br><span style="font-size:10px;color:var(--text-hint);">${new Date(evData.received_at).toLocaleString()}</span>`
+      ? `<span style="color:var(--green-dark);font-weight:500;">${evData.lc_status_label || "Received"}</span><br><span style="font-size:10px;color:var(--text-hint);">${fmtDT(new Date(evData.received_at))}</span>`
       : `<span style="color:var(--amber);font-weight:500;">No event received</span>`;
 
     // Relay status
@@ -3992,7 +4038,7 @@ async function loadProgramSummary() {
     return `<tr style="${!hasEvent ? 'background:rgba(186,117,23,0.05);' : ''}">
       <td style="padding:8px;border-bottom:0.5px solid var(--border);font-weight:500;">${device.name}<br><span style="font-size:10px;color:var(--text-hint);font-family:monospace;">${device.uid}</span></td>
       <td style="padding:8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${statusDot}</td>
-      <td style="padding:8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${lastReport ? lastReport.toLocaleString() : "Never"}</td>
+      <td style="padding:8px;border-bottom:0.5px solid var(--border);white-space:nowrap;">${lastReport ? fmtDT(lastReport) : "Never"}</td>
       <td style="padding:8px;border-bottom:0.5px solid var(--border);">${location}</td>
       <td style="padding:8px;border-bottom:0.5px solid var(--border);">${eventStatus}</td>
       <td style="padding:8px;border-bottom:0.5px solid var(--border);font-weight:${anyOn?"600":"400"};color:${anyOn?"var(--green-dark)":"var(--text-secondary)"};">${relayStr}</td>
@@ -4019,7 +4065,7 @@ async function populateParticipationEventSelect() {
         seen.add(r.name);
         const opt = document.createElement("option");
         opt.value = r.name;
-        const fireTime = new Date(r.fire_at).toLocaleString();
+        const fireTime = fmtDT(new Date(r.fire_at));
         opt.textContent = `${r.name} — ${fireTime}`;
         sel.appendChild(opt);
       }
@@ -4075,7 +4121,7 @@ async function loadParticipation() {
           <div style="font-size:11px;color:var(--blue-dark);">Participation Rate</div>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:8px;">Event window: ${fireAt.toLocaleString()} — ${endAt.toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:8px;">Event window: ${fmtDT(fireAt)} — ${fmtDT(endAt)}</div>
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
         <thead><tr>
           <th style="text-align:left;padding:6px 8px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Device</th>
@@ -4434,8 +4480,8 @@ async function loadEventHistory() {
         const endAt      = fireAt ? new Date(fireAt.getTime() + durationMs) : null;
         const sc         = statusClass[r.status] || "sent";
         const icon       = statusIcon[r.status]  || "📋";
-        const fireStr    = fireAt ? fireAt.toLocaleString() : "—";
-        const endStr     = endAt  ? endAt.toLocaleString()  : "—";
+        const fireStr    = fireAt ? fmtDT(fireAt) : "—";
+        const endStr     = endAt  ? fmtDT(endAt)  : "—";
         const dur        = r.duration_minutes ? formatDuration(r.duration_minutes) : "—";
 
         // Encode item for modal
@@ -4473,8 +4519,8 @@ async function exportEventHistory() {
       r.lc_strategy || "",
       r.lc_reps || "",
       r.duration_minutes ? formatDuration(r.duration_minutes) : "",
-      r.fire_at   ? new Date(r.fire_at).toLocaleString()   : "",
-      r.fired_at  ? new Date(r.fired_at).toLocaleString()  : "",
+      r.fire_at   ? fmtDT(new Date(r.fire_at))   : "",
+      r.fired_at  ? fmtDT(new Date(r.fired_at))  : "",
       r.status || ""
     ].map(v => `"${v}"`).join(","));
     const csv  = [headers.join(","), ...csvRows].join("\n");
@@ -4860,7 +4906,7 @@ function renderHeaderWeather() {
   const days7 = time.slice(0, 7);
   daysEl.innerHTML = days7.map((dateStr, i) => {
     const d    = new Date(dateStr + "T12:00:00");
-    const name = i === 0 ? "Today" : d.toLocaleDateString("en-US", { weekday: "short" });
+    const name = i === 0 ? "Today" : d.toLocaleDateString("en-US", { timeZone: globalTimezone, weekday: "short" });
     const sel  = headerWxSelectedDay === i;
     return `<div class="header-wx-day${sel ? " selected" : ""}" onclick="toggleHeaderHourly(${i})" style="cursor:pointer;${sel ? "border-color:var(--blue);background:var(--blue-bg);" : ""}">
       <div class="header-wx-day-name">${name}</div>
@@ -4904,7 +4950,7 @@ function renderHeaderHourly() {
   const selDate  = new Date(dateStr + "T12:00:00");
   const dayLabel = headerWxSelectedDay === 0
     ? "Today"
-    : selDate.toLocaleDateString("en-US", { weekday:"long", month:"short", day:"numeric" });
+    : selDate.toLocaleDateString("en-US", { timeZone: globalTimezone, weekday:"long", month:"short", day:"numeric" });
 
   panel.innerHTML = `
     <div style="font-size:11px;font-weight:600;color:var(--text-hint);text-transform:uppercase;letter-spacing:0.05em;padding:4px 1rem 4px;text-align:center;">
@@ -4913,7 +4959,7 @@ function renderHeaderHourly() {
     </div>
     <div style="display:flex;gap:6px;padding:4px 1rem 8px;overflow-x:auto;justify-content:center;flex-wrap:nowrap;">
       ${dayHours.map(h => {
-        const hour = new Date(h.time).toLocaleTimeString("en-US", { hour:"numeric", hour12:true });
+        const hour = new Date(h.time).toLocaleTimeString("en-US", { timeZone: globalTimezone, hour:"numeric", hour12:true });
         return `<div style="display:flex;flex-direction:column;align-items:center;min-width:52px;padding:5px 8px;border-radius:var(--radius-sm);background:var(--surface);border:0.5px solid var(--border);flex-shrink:0;">
           <div style="font-size:10px;color:var(--text-hint);margin-bottom:2px;">${hour}</div>
           <div style="font-size:18px;line-height:1;margin:2px 0;">${wxIcon(h.code)}</div>
@@ -4994,7 +5040,7 @@ function renderWeatherForecast() {
 
   const daysHtml = time.map((dateStr, i) => {
     const d    = new Date(dateStr + "T12:00:00");
-    const name = i === 0 ? "Today" : d.toLocaleDateString("en-US", { weekday: "short" });
+    const name = i === 0 ? "Today" : d.toLocaleDateString("en-US", { timeZone: globalTimezone, weekday: "short" });
     const sel  = wxSelectedDay === i ? "selected" : "";
     return `<div class="wx-day ${sel}" onclick="selectWeatherDay(${i})">
       <div class="wx-day-name">${name}</div>
@@ -5037,7 +5083,7 @@ function renderHourlyForecast(dayIndex) {
   if (dayHours.length === 0) return "";
 
   const hoursHtml = dayHours.map(h => {
-    const hour = new Date(h.time).toLocaleTimeString("en-US", { hour: "numeric", hour12: true });
+    const hour = new Date(h.time).toLocaleTimeString("en-US", { timeZone: globalTimezone, hour: "numeric", hour12: true });
     return `<div class="wx-hour">
       <div class="wx-hour-time">${hour}</div>
       <div class="wx-hour-icon">${wxIcon(h.code)}</div>
@@ -5047,7 +5093,7 @@ function renderHourlyForecast(dayIndex) {
   }).join("");
 
   const selDate = new Date(dateStr + "T12:00:00");
-  const dayLabel = wxSelectedDay === 0 ? "Today" : selDate.toLocaleDateString("en-US", { weekday:"long", month:"short", day:"numeric" });
+  const dayLabel = wxSelectedDay === 0 ? "Today" : selDate.toLocaleDateString("en-US", { timeZone: globalTimezone, weekday:"long", month:"short", day:"numeric" });
 
   return `<div class="wx-hourly">
     <div style="font-size:11px;font-weight:600;color:var(--text-hint);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
@@ -5504,7 +5550,7 @@ async function loadUsersTable() {
     // Last Login
     const tdLogin = tr.insertCell();
     tdLogin.style.cssText = "padding:8px;border-bottom:0.5px solid var(--border);color:var(--text-hint);";
-    tdLogin.textContent = u.last_login ? new Date(u.last_login).toLocaleString() : "Never";
+    tdLogin.textContent = u.last_login ? fmtDT(new Date(u.last_login)) : "Never";
 
     // Actions
     const tdAct = tr.insertCell();
@@ -5928,7 +5974,7 @@ async function loadLatestDevice(deviceId) {
       });
       if (active) {
         const endAt   = new Date(new Date(active.fire_at).getTime() + ((active.duration_minutes||0)*60*1000));
-        const endStr  = endAt.toLocaleTimeString("en-US", {hour:"numeric",minute:"2-digit"});
+        const endStr  = endAt.toLocaleTimeString("en-US", { timeZone: globalTimezone,hour:"numeric",minute:"2-digit"});
         const qData   = encodeURIComponent(JSON.stringify({type:"queue",item:active}));
         activeEventPill = `<div style="margin-bottom:8px;">
           <span class="event-pill started" onclick="showEventDetail(JSON.parse(decodeURIComponent('${qData}')))"
@@ -5951,7 +5997,7 @@ async function loadLatestDevice(deviceId) {
       <div class="data-field"><span class="data-field-name">Comfort</span><span class="data-field-value">${r.customer_comfort > 0 ? "On" : "Off"}</span></div>
       <div class="data-field"><span class="data-field-name">Location</span><span class="data-field-value">${r.location ?? "—"}</span></div>
     </div>`;
-    tsEl.textContent = `Last updated: ${new Date(r.recorded_at).toLocaleString()}`;
+    tsEl.textContent = `Last updated: ${fmtDT(new Date(r.recorded_at))}`;
 
     // Load health data - use device_readings SW/SQ as primary, device_health for voltage/temp
     const healthEl = document.getElementById(`health-strip-${deviceId}`);
@@ -6020,7 +6066,7 @@ async function loadLatestDevice(deviceId) {
               <div class="health-item"><div class="health-label">Firmware</div><div class="health-value" style="font-size:10px;">${fwShort}</div></div>
             </div>
             <div style="font-size:10px;color:var(--text-hint);margin-top:2px;">
-              📍 ${h.location || "—"} &bull; 🕐 ${new Date(h.recorded_at).toLocaleString()}
+              📍 ${h.location || "—"} &bull; 🕐 ${fmtDT(new Date(h.recorded_at))}
             </div>`;
         } else {
           // Only show "no data" message if strip is currently empty
@@ -6048,7 +6094,7 @@ async function loadHistory() {
     tbody.innerHTML = rows.map(r => {
       const devName = DEVICES.find(d => d.uid === r.device_uid)?.name ?? unitName(r.device_uid);
       return `<tr>
-        <td>${new Date(r.recorded_at).toLocaleString()}</td><td>${devName}</td>
+        <td>${fmtDT(new Date(r.recorded_at))}</td><td>${devName}</td>
         <td>${relayDot(r.relay_status_r1)}</td><td>${relayDot(r.relay_status_r2)}</td>
         <td>${relayDot(r.relay_status_r3)}</td><td>${relayDot(r.relay_status_r4)}</td>
         <td>${r.voltage != null ? (r.voltage/10).toFixed(1)+"V" : "—"}</td><td>${r.current != null ? (r.current/10).toFixed(1)+"A" : "—"}</td>
@@ -6134,7 +6180,7 @@ async function loadDeviceManagement() {
                   ${r.enabled !== false ? 'Enabled' : 'Disabled'}
                 </span>
               </td>
-              <td>${r.created_at ? new Date(r.created_at).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+              <td>${r.created_at ? new Date(r.created_at).toLocaleDateString("en-US",{ timeZone: globalTimezone,month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
               <td style="text-align:right;">
                 <button onclick="toggleDeviceEnabled('${r.uid}', ${r.enabled !== false})"
                   style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--border-md);
@@ -6326,7 +6372,7 @@ async function loadFleetHealth() {
     });
     updateFleetSummary(); updateAlertCounts();
     if(document.getElementById("fh-charts-panel")?.style.display!=="none") renderFleetCharts();
-    if(st) st.textContent=`Last updated: ${new Date().toLocaleTimeString()}`;
+    if(st) st.textContent=`Last updated: ${new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone })}`;
   } catch(e) { console.error("loadFleetHealth:",e); if(st) st.textContent="Error loading."; }
 }
 
@@ -6409,7 +6455,7 @@ function renderDrillList() {
         <span style="color:${sc[d.overallStatus]||"inherit"};font-size:11px;font-weight:600;">${d.overallStatus.toUpperCase()}</span>
       </div>
       <div style="display:flex;gap:10px;margin-top:5px;font-size:11px;color:var(--text-secondary);">
-        <span>🕐 ${d.lastSeen?new Date(d.lastSeen).toLocaleString():"Never"}</span>
+        <span>🕐 ${d.lastSeen?fmtDT(new Date(d.lastSeen)):"Never"}</span>
         ${d.voltage?`<span>🔋 ${d.voltage.toFixed(3)}V</span>`:""}
         ${d.temp?`<span>🌡️ ${d.temp.toFixed(1)}°C</span>`:""}
         ${d.rsrp?`<span>📶 ${d.rsrp}dBm</span>`:""}
@@ -6872,7 +6918,7 @@ async function simulateOpenADREvent() {
 // ── Poll / Status ─────────────────────────────────────────────────────────────
 
 function oadrLog(msg) {
-  const ts = new Date().toLocaleTimeString();
+  const ts = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
   _oadrPollLog.unshift(`[${ts}] ${msg}`);
   if (_oadrPollLog.length > 50) _oadrPollLog.pop();
   const el = document.getElementById('oadr-poll-log');
@@ -6887,7 +6933,7 @@ async function oadrPollNow() {
     const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const data = await res.json();
     const pollEl = document.getElementById('oadr-poll-status');
-    if (pollEl) pollEl.textContent = `Last poll: ${new Date().toLocaleTimeString()}`;
+    if (pollEl) pollEl.textContent = `Last poll: ${new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone })}`;
     if (data.success) {
       if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
       oadrLog(`Poll OK — HTTP ${data.status}${data.has_event ? ' — EVENT RECEIVED' : ' — no pending events'}`);
@@ -6999,8 +7045,8 @@ function oadrUpdateCurrentEvent() {
     </div>
     <div style="font-size:11px;color:var(--text-hint);display:flex;flex-direction:column;gap:4px;">
       <div>Event ID: <span style="font-family:monospace;">${(e.event_id||'').slice(-20)}</span></div>
-      <div>Start: ${start?start.toLocaleString():'—'}</div>
-      <div>End: ${end?end.toLocaleString():'—'}</div>
+      <div>Start: ${start?fmtDT(start):'—'}</div>
+      <div>End: ${end?fmtDT(end):'—'}</div>
       <div>Duration: ${e.duration_mins||'—'} minutes</div>
       <div>Status: <strong>${e.event_status}</strong></div>
     </div>`;
@@ -7030,7 +7076,7 @@ async function loadOADRSummaryCard() {
     } else {
       if (recentEl) recentEl.innerHTML = '<div class="sched-empty">No OpenADR events received yet.</div>';
     }
-    if (lastPoll) lastPoll.textContent = new Date().toLocaleTimeString();
+    if (lastPoll) lastPoll.textContent = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
   } catch(e) {
     if (badge) { badge.textContent = '⚠ DB Error'; badge.style.color = 'var(--amber)'; }
   }
