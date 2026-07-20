@@ -425,7 +425,9 @@
   </div>
   <!-- Sub-tabs (shown contextually) -->
   <div class="sub-tabs" id="sub-tabs-events" style="display:none;">
+    <button class="sub-tab-btn" id="sub-current-event" onclick="switchSub('events','current-event',this)">🟢 Live Event</button>
     <button class="sub-tab-btn active" id="sub-scheduler" onclick="switchSub('events','scheduler',this)">Event Scheduler</button>
+    <button class="sub-tab-btn" id="sub-event-history" onclick="switchSub('events','event-history',this)">Event Activity</button>
     <button class="sub-tab-btn" id="sub-eventstats" onclick="switchSub('events','eventstats',this)">Event Statistics</button>
   </div>
   <div class="sub-tabs" id="sub-tabs-devices" style="display:none;">
@@ -636,6 +638,36 @@
   </div>
 </div>
 
+<!-- ── CURRENT EVENT VIEWER ── -->
+<div class="tab-pane" id="tab-current-event">
+  <div class="scroll-content">
+    <div style="max-width:1200px;margin:0 auto;padding:1rem;">
+
+      <!-- Header with auto-refresh indicator -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:17px;font-weight:700;color:var(--text-primary);">🟢 Live Event Monitor</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:2px;">Auto-refreshes every 30 seconds while active</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="live-event-last-refresh" style="font-size:10px;color:var(--text-hint);font-family:monospace;"></span>
+          <button class="queue-refresh" onclick="loadCurrentEvent()">🔄 Refresh Now</button>
+        </div>
+      </div>
+
+      <!-- Active event container -->
+      <div id="current-event-container">
+        <div class="sched-card" style="text-align:center;padding:2rem;">
+          <div style="font-size:32px;margin-bottom:10px;">📭</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text-primary);">No Active Events</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:6px;">Live event status will appear here when an event is in progress</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <!-- ── SCHEDULER TAB ── -->
 <div class="tab-pane" id="tab-scheduler">
   <div class="scroll-content">
@@ -795,10 +827,19 @@
         </div>
       </div>
 
-      <!-- Saved Schedules -->
+    </div>
+  </div>
+</div>
+
+<!-- ── EVENT ACTIVITY TAB ── -->
+<div class="tab-pane" id="tab-event-history">
+  <div class="scroll-content">
+    <div style="max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:16px;padding:1rem;">
+
+      <!-- Scheduled Events -->
       <div class="sched-card">
         <div class="sched-card-header">
-          <div class="sched-card-title">Scheduled Events</div>
+          <div class="sched-card-title">📅 Scheduled Events</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <select class="history-select" id="sched-range" onchange="loadSchedules()">
               <option value="future" selected>Current &amp; Upcoming</option>
@@ -815,11 +856,11 @@
         </div>
       </div>
 
-      <!-- Events Received by Device -->
+      <!-- Events Received -->
       <div class="sched-card">
         <div class="sched-card-header">
-          <div class="sched-card-title">Events Received</div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div class="sched-card-title">📨 Events Received</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <select class="history-select" id="device-events-range" onchange="loadDeviceEvents()">
               <option value="24" selected>Last 24 Hours</option>
               <option value="168">Last 7 Days</option>
@@ -830,6 +871,26 @@
             <button class="queue-refresh" onclick="loadDeviceEvents()">Refresh</button>
           </div>
         </div>
+
+        <!-- Opt-Out Panel -->
+        <div id="opt-out-panel" style="display:none;margin-bottom:12px;background:var(--surface2);border-radius:var(--radius-sm);border:0.5px solid var(--border-md);overflow:hidden;">
+          <div style="padding:10px 14px;border-bottom:0.5px solid var(--border-md);display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--text-primary);">🚫 Device Opt-Out Manager</div>
+              <div style="font-size:11px;color:var(--text-hint);margin-top:2px;">Select an event then opt out individual devices. Sends restore to that device only.</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="opt-out-event-select" class="history-select" onchange="loadOptOutPanel()" style="font-size:11px;">
+                <option value="">— Select Event —</option>
+              </select>
+              <button class="queue-refresh" onclick="toggleOptOutPanel()" style="font-size:11px;">✕ Close</button>
+            </div>
+          </div>
+          <div id="opt-out-device-list" style="padding:10px 14px;">
+            <div class="sched-empty">Select an event above to manage opt-outs.</div>
+          </div>
+        </div>
+
         <div class="queue-list" id="device-events-list">
           <div class="sched-empty">Loading...</div>
         </div>
@@ -883,14 +944,22 @@
       </div>
 
       <!-- Post-Event Participation -->
-      <!-- Post-Event Participation -->
       <div class="sched-card">
         <div class="sched-card-header">
           <div class="sched-card-title">Post-Event Participation</div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select class="history-select" id="participation-date-range" style="font-size:11px;" onchange="refreshParticipationEvents()">
+              <option value="1">Last 24 hours</option>
+              <option value="3">Last 3 days</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="">All time</option>
+            </select>
             <select class="history-select" id="participation-event-select">
               <option value="">— Select Event —</option>
             </select>
+            <button class="queue-refresh" onclick="refreshParticipationEvents()">🔄</button>
             <button class="queue-refresh" onclick="loadParticipation()">Load</button>
           </div>
         </div>
@@ -2089,6 +2158,8 @@ function activateSubBtn(main, sub) {
 function runTabInit(name) {
   if (name === "summary")    initSummaryTab();
   if (name === "scheduler")  initScheduler().catch(e => console.error(e));
+  if (name === "current-event") initCurrentEventViewer();
+  if (name === "event-history") { loadSchedules(); loadDeviceEvents(); }
   if (name === "eventstats") initEventStats();
   if (name === "data")       loadLatest();
   if (name === "history")    { loadHistory(); loadCharts(); }
