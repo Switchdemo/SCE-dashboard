@@ -7289,7 +7289,7 @@ async function oadrPollNow() {
   if (badge) { badge.textContent = '● Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
   oadrLog('Polling VTN…');
   try {
-    // ── 1. Read VEN ID (from OpenADR form input, or fall back to Supabase) ──
+    // ── 1. Read VEN ID ──
     let venId = document.getElementById('oadr-ven-id')?.value?.trim() || '';
     if (!venId) {
       try {
@@ -7299,7 +7299,7 @@ async function oadrPollNow() {
     }
     if (!venId) venId = 'E545300JH';
 
-    // ── 2. Construct the oadrPoll SOAP/XML envelope (OpenADR 2.0b spec) ──
+    // ── 2. Construct oadrPoll XML ──
     const oadrPollXml = `<?xml version="1.0" encoding="UTF-8"?>
 <oadr:oadrPayload xmlns:oadr="http://openadr.org/oadr-2.0b/2012/07"
                   xmlns:ei="http://docs.oasis-open.org/ns/energyinterop/201110"
@@ -7312,49 +7312,83 @@ async function oadrPollNow() {
   </oadr:oadrSignedObject>
 </oadr:oadrPayload>`;
 
-    // ── 3. POST as application/xml to the worker's poll endpoint ──
-    const res = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', {
+    // ── 3. Try /openadr/poll first, fall back to /openadr/test?poll=1 ──
+    //       The /poll route may not attach the mTLS cert binding for its
+    //       outbound fetch to the VTN (526). The /test route DOES use mTLS,
+    //       so we try that as a fallback with the oadrPoll XML in the body.
+    let res, responseText, data, usedFallback = false;
+
+    // Primary: POST XML to /openadr/poll
+    res = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', {
       method: 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body: oadrPollXml
     });
+    responseText = await res.text();
 
+    // Check if the worker reported a 526 (mTLS failure on outbound)
+    let innerStatus = null;
+    try { const d = JSON.parse(responseText); innerStatus = d.status; } catch(e) {}
+
+    if (innerStatus === 526 || (!res.ok && responseText.includes('526'))) {
+      oadrLog('Poll route returned 526 (mTLS) — trying /openadr/test fallback…');
+      usedFallback = true;
+      // Fallback: POST the oadrPoll XML through the /test route which uses mTLS
+      try {
+        res = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/xml' },
+          body: oadrPollXml
+        });
+        responseText = await res.text();
+      } catch(e) {
+        // /test may not accept POST — try GET with ven_id as query param
+        res = await fetch(PROXY_URL.replace(/\/$/, '') + `/openadr/test?action=poll&ven_id=${encodeURIComponent(venId)}`, {
+          method: 'GET'
+        });
+        responseText = await res.text();
+      }
+    }
+
+    // ── 4. Log raw response ──
     const ts = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
     const pollEl = document.getElementById('oadr-poll-status');
     if (pollEl) pollEl.textContent = `Last poll: ${ts}`;
     const summaryPoll = document.getElementById('oadr-last-poll');
     if (summaryPoll) summaryPoll.textContent = ts;
-
-    // ── 4. Read and log the raw response for debugging ──
-    const responseText = await res.text();
     const preview = responseText.substring(0, 250).replace(/\s+/g, ' ').trim();
-    oadrLog(`← HTTP ${res.status}: ${preview}`);
+    oadrLog(`← HTTP ${res.status}${usedFallback ? ' (via /test)' : ''}: ${preview}`);
 
-    // ── 5. Detect what the worker returned ──
+    // ── 5. Parse response ──
     const isXml  = responseText.trimStart().startsWith('<');
     const isJson = responseText.trimStart().startsWith('{') || responseText.trimStart().startsWith('[');
-
-    // Check for OpenADR event content anywhere in the response
     const hasDistributeEvent = responseText.includes('oadrDistributeEvent') || responseText.includes('eiEvent');
     const hasOadrResponse    = responseText.includes('oadrResponse');
-    const isEmptyPoll        = hasOadrResponse && !hasDistributeEvent;
 
     let pollSuccess = false;
     let hasEvent    = false;
+    let failDetail  = '';
 
     if (isJson) {
-      // ── Worker returned JSON wrapper ──
       try {
-        const data = JSON.parse(responseText);
-        // Accept any of: { success: true }, { ok: true }, HTTP 2xx with events
-        pollSuccess = data.success === true || data.ok === true || (res.ok && data.status >= 200 && data.status < 300);
-        hasEvent    = !!(data.has_event || data.hasEvent || data.event || (data.events && data.events.length > 0));
+        data = JSON.parse(responseText);
+        // Trust the worker's own success field first
+        if (data.success === true)  pollSuccess = true;
+        if (data.success === false) {
+          pollSuccess = false;
+          failDetail = data.error || data.raw || `VTN returned ${data.status}`;
+        }
+        // If no success field at all, infer from status
+        if (data.success === undefined) {
+          pollSuccess = (data.status >= 200 && data.status < 300) || res.ok;
+        }
+        hasEvent = !!(data.has_event || data.hasEvent || (data.events && data.events.length > 0));
 
-        // If JSON wraps raw VTN XML in a field, check that too
-        const innerXml = data.body || data.response || data.xml || data.vtn_response || data.raw || '';
+        // Check for event XML embedded in JSON
+        const innerXml = data.body || data.response || data.xml || data.vtn_response || '';
         if (typeof innerXml === 'string' && innerXml.includes('oadrDistributeEvent')) {
           hasEvent = true;
-          // Relay the inner XML to event ingest
+          pollSuccess = true;
           try {
             await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/event', {
               method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: innerXml
@@ -7362,36 +7396,28 @@ async function oadrPollNow() {
             oadrLog('Event XML relayed to /openadr/event for ingest');
           } catch(relayErr) { oadrLog(`Event relay failed: ${relayErr.message}`); }
         }
-
-        // If the worker says no event, that's still a successful poll
-        if (res.ok && !pollSuccess && !data.error) pollSuccess = true;
-
-        if (!pollSuccess && data.error) {
-          oadrLog(`Worker error: ${data.error}`);
-        }
       } catch(e) {
-        oadrLog(`JSON parse failed: ${e.message}`);
+        oadrLog(`JSON parse error: ${e.message}`);
       }
     } else if (isXml) {
-      // ── Worker returned raw VTN XML ──
-      pollSuccess = res.ok;
-      hasEvent    = hasDistributeEvent;
-
       if (hasDistributeEvent) {
+        pollSuccess = true;
+        hasEvent = true;
         oadrLog('VTN returned oadrDistributeEvent — relaying to event ingest');
         try {
           await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/event', {
             method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: responseText
           });
-          oadrLog('Event XML relayed to /openadr/event for ingest');
         } catch(relayErr) { oadrLog(`Event relay failed: ${relayErr.message}`); }
-      } else if (isEmptyPoll) {
-        oadrLog('VTN: oadrResponse — no pending events');
+      } else if (hasOadrResponse) {
         pollSuccess = true;
+        oadrLog('VTN: oadrResponse — no pending events');
+      } else {
+        pollSuccess = res.ok;
       }
     } else {
-      // ── Unknown format — treat HTTP 2xx as success ──
       pollSuccess = res.ok;
+      if (!pollSuccess) failDetail = responseText.substring(0, 100);
     }
 
     // ── 6. Update UI ──
@@ -7404,9 +7430,9 @@ async function oadrPollNow() {
         await loadOADRSummaryCard();
       }
     } else {
-      if (badge) { badge.textContent = '❌ Disconnected'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
-      if (summaryBadge) { summaryBadge.textContent = '⚠ Poll Failed'; summaryBadge.style.background = 'rgba(245,158,11,0.1)'; summaryBadge.style.color = 'var(--amber)'; }
-      oadrLog(`Poll FAILED — HTTP ${res.status}`);
+      if (badge) { badge.textContent = '❌ VTN 526 mTLS'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+      if (summaryBadge) { summaryBadge.textContent = '⚠ mTLS 526'; summaryBadge.style.background = 'rgba(245,158,11,0.1)'; summaryBadge.style.color = 'var(--amber)'; }
+      oadrLog(`Poll FAILED: ${failDetail || 'HTTP ' + res.status}`);
     }
   } catch(e) {
     if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
