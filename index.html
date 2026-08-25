@@ -4010,10 +4010,13 @@ function viewDeviceHistory(uid) {
 
 // ── PROGRAM SUMMARY ──────────────────────────────────────────────────────────
 let summaryRefreshInterval = null;
-let _oadrPollerStarted = false;
+let _oadrPollerStarted    = false;
+let _oadrPollInterval     = null;   // moved here — was declared at line 6875, too late for hoisting safety
 
 function startOADRPoller() {
-  if (_oadrPollerStarted) return;           // idempotent — safe to call multiple times
+  // Allow restart if the interval was previously cleared (e.g. after tab navigation
+  // or if oadrSetPollInterval(0) was called). Only truly idempotent when running.
+  if (_oadrPollerStarted && _oadrPollInterval) return;
   _oadrPollerStarted = true;
 
   // Read the saved poll interval from the dropdown (defaults to 5 min)
@@ -5510,6 +5513,19 @@ async function onSignedIn(session) {
   currentSession = session;
   currentUser    = session.user;
 
+  // Keep the JWT fresh — refresh proactively when < 5 min remain
+  if (window._tokenRefreshTimer) clearInterval(window._tokenRefreshTimer);
+  window._tokenRefreshTimer = setInterval(async () => {
+    try {
+      const { data: { session: s } } = await supabaseClient.auth.getSession();
+      if (!s) return;
+      if ((s.expires_at - Math.floor(Date.now()/1000)) < 300) {
+        const { data } = await supabaseClient.auth.refreshSession();
+        if (data?.session) { currentSession = data.session; console.log('[Auth] Token refreshed'); }
+      }
+    } catch(e) { console.warn('[Auth] Token refresh error:', e.message); }
+  }, 60000);
+
   // Load user profile (role)
   const { data: profile } = await supabaseClient
     .from("user_profiles")
@@ -6872,7 +6888,7 @@ const DR_SHED_LEVELS = ["emergency", "high", "medium", "low"];
 const DR_SHED_LABELS = { emergency: "Emergency", high: "High", medium: "Medium", low: "Low" };
 const DR_MODES = { bas_di: "BAS Mode", direct_load: "Direct Load" };
 
-let _oadrPollInterval = null;
+// _oadrPollInterval declared at top of script with other poller variables
 let _oadrPollLog      = [];
 let _oadrActiveEvent  = null;
 
