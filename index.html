@@ -7289,66 +7289,69 @@ async function oadrPollNow() {
   if (badge) { badge.textContent = '● Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
   oadrLog('Polling VTN…');
   try {
-    // ── 1. Ensure the worker has current VEN/VTN config in Supabase ──
-    // Read config from the OpenADR form inputs (if available) and persist to
-    // Supabase so the worker can read them — same pattern as testVTNConnection.
-    const venIdEl   = document.getElementById('oadr-ven-id');
-    const vtnUrlEl  = document.getElementById('oadr-vtn-url');
-    const vtnIdEl   = document.getElementById('oadr-vtn-id');
-    const regIdEl   = document.getElementById('oadr-reg-id');
-
-    // Only push config if the OpenADR tab inputs exist and have values.
-    // (On the Summary tab these inputs aren't in the DOM, but the worker
-    // already has the last-saved values in Supabase.)
-    if (venIdEl?.value && vtnUrlEl?.value) {
-      const authMode   = document.querySelector('.oadr-auth-btn.active')?.dataset?.mode || 'mtls';
-      const mtlsCertId = document.getElementById('oadr-mtls-cert-id')?.value?.trim() || 'openadr-ven-cert';
-      const pairs = {
-        ven_id:           venIdEl.value.trim(),
-        vtn_url:          vtnUrlEl.value.trim(),
-        vtn_id:           vtnIdEl?.value?.trim()  || '',
-        oadr_reg_id:      regIdEl?.value?.trim()   || '',
-        oadr_transport:   document.getElementById('oadr-transport')?.value || 'soap',
-        oadr_auth_mode:   authMode,
-        oadr_mtls_cert_id: mtlsCertId
-      };
-      // Upsert each setting — fire-and-forget; don't block the poll on DB writes
-      for (const [key, value] of Object.entries(pairs)) {
-        fetch(`${SUPABASE_URL}/rest/v1/program_settings`, {
-          method: 'POST',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'resolution=merge-duplicates'
-          },
-          body: JSON.stringify({ setting_key: key, setting_value: value })
-        }).catch(() => {});
-      }
-      // Small pause so the upserts land before the worker reads them
-      await new Promise(r => setTimeout(r, 300));
+    // ── 1. Read VEN ID (from OpenADR form input, or fall back to Supabase) ──
+    let venId = document.getElementById('oadr-ven-id')?.value?.trim() || '';
+    if (!venId) {
+      try {
+        const rows = await supabaseGet("program_settings?setting_key=eq.ven_id&select=setting_value");
+        if (rows?.[0]?.setting_value) venId = rows[0].setting_value;
+      } catch(e) {}
     }
+    if (!venId) venId = 'E545300JH'; // hard-coded fallback from the default config
 
-    // ── 2. Call the worker poll endpoint (worker reads config from Supabase) ──
-    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', {
+    // ── 2. Construct the oadrPoll SOAP/XML envelope (OpenADR 2.0b spec) ──
+    // This is what a compliant VEN sends to the VTN's OadrPoll service.
+    // Sending real XML (not empty JSON) ensures the worker uses its mTLS
+    // forwarding path — the same path that /openadr/test and /openadr/register use.
+    const oadrPollXml = `<?xml version="1.0" encoding="UTF-8"?>
+<oadr:oadrPayload xmlns:oadr="http://openadr.org/oadr-2.0b/2012/07"
+                  xmlns:ei="http://docs.oasis-open.org/ns/energyinterop/201110"
+                  xmlns:pyld="http://docs.oasis-open.org/ns/energyinterop/201110/payloads"
+                  xmlns:xcal="urn:ietf:params:xml:ns:icalendar-2.0">
+  <oadr:oadrSignedObject>
+    <oadr:oadrPoll ei:schemaVersion="2.0b">
+      <ei:venID>${venId}</ei:venID>
+    </oadr:oadrPoll>
+  </oadr:oadrSignedObject>
+</oadr:oadrPayload>`;
+
+    // ── 3. POST as application/xml to the worker's poll endpoint ──
+    const res = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}'
+      headers: { 'Content-Type': 'application/xml' },
+      body: oadrPollXml
     });
 
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch(parseErr) {
-      // If the worker returned non-JSON (e.g. XML from the VTN), log it for debugging
-      oadrLog(`Poll response (HTTP ${res.status}): ${text.substring(0, 200)}`);
-      data = { success: res.ok, status: res.status, raw: text };
-    }
-
-    const pollEl = document.getElementById('oadr-poll-status');
     const ts = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
+    const pollEl = document.getElementById('oadr-poll-status');
     if (pollEl) pollEl.textContent = `Last poll: ${ts}`;
     const summaryPoll = document.getElementById('oadr-last-poll');
     if (summaryPoll) summaryPoll.textContent = ts;
+
+    const responseText = await res.text();
+    let data;
+    try { data = JSON.parse(responseText); } catch(parseErr) {
+      // Worker may return the raw VTN XML response — check for events in it
+      const hasEvent = responseText.includes('oadrDistributeEvent') || responseText.includes('eiEvent');
+      const noEvent  = responseText.includes('oadrResponse') && !hasEvent;
+      data = { success: res.ok, status: res.status, has_event: hasEvent, raw: responseText };
+      if (hasEvent) {
+        oadrLog(`Poll OK — VTN returned oadrDistributeEvent payload`);
+        // Forward the raw VTN event XML to the worker's event ingest endpoint
+        // so it gets parsed and stored in Supabase like a normal VTN push would
+        try {
+          await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/xml' },
+            body: responseText
+          });
+        } catch(e) { oadrLog(`Event ingest relay failed: ${e.message}`); }
+      } else if (noEvent) {
+        oadrLog(`Poll OK — VTN: no pending events (HTTP ${res.status})`);
+      } else {
+        oadrLog(`Poll response (HTTP ${res.status}): ${responseText.substring(0, 300)}`);
+      }
+    }
 
     if (data.success) {
       if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
@@ -7358,9 +7361,9 @@ async function oadrPollNow() {
         await loadOADREvents();
         await loadOADRSummaryCard();
       }
-    } else {
-      // Include HTTP status and any response detail in the log for debugging
-      const detail = data.error || data.message || (data.raw ? `raw response (HTTP ${res.status})` : `HTTP ${res.status}`);
+    } else if (!data.raw) {
+      // JSON failure response from the worker (not raw XML already handled above)
+      const detail = data.error || data.message || `HTTP ${data.status || res.status}`;
       if (badge) { badge.textContent = '❌ Disconnected'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
       if (summaryBadge) { summaryBadge.textContent = '⚠ Poll Failed'; summaryBadge.style.background = 'rgba(245,158,11,0.1)'; summaryBadge.style.color = 'var(--amber)'; }
       oadrLog(`Poll FAILED: ${detail}`);
