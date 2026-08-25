@@ -7297,12 +7297,9 @@ async function oadrPollNow() {
         if (rows?.[0]?.setting_value) venId = rows[0].setting_value;
       } catch(e) {}
     }
-    if (!venId) venId = 'E545300JH'; // hard-coded fallback from the default config
+    if (!venId) venId = 'E545300JH';
 
     // ── 2. Construct the oadrPoll SOAP/XML envelope (OpenADR 2.0b spec) ──
-    // This is what a compliant VEN sends to the VTN's OadrPoll service.
-    // Sending real XML (not empty JSON) ensures the worker uses its mTLS
-    // forwarding path — the same path that /openadr/test and /openadr/register use.
     const oadrPollXml = `<?xml version="1.0" encoding="UTF-8"?>
 <oadr:oadrPayload xmlns:oadr="http://openadr.org/oadr-2.0b/2012/07"
                   xmlns:ei="http://docs.oasis-open.org/ns/energyinterop/201110"
@@ -7328,45 +7325,88 @@ async function oadrPollNow() {
     const summaryPoll = document.getElementById('oadr-last-poll');
     if (summaryPoll) summaryPoll.textContent = ts;
 
+    // ── 4. Read and log the raw response for debugging ──
     const responseText = await res.text();
-    let data;
-    try { data = JSON.parse(responseText); } catch(parseErr) {
-      // Worker may return the raw VTN XML response — check for events in it
-      const hasEvent = responseText.includes('oadrDistributeEvent') || responseText.includes('eiEvent');
-      const noEvent  = responseText.includes('oadrResponse') && !hasEvent;
-      data = { success: res.ok, status: res.status, has_event: hasEvent, raw: responseText };
-      if (hasEvent) {
-        oadrLog(`Poll OK — VTN returned oadrDistributeEvent payload`);
-        // Forward the raw VTN event XML to the worker's event ingest endpoint
-        // so it gets parsed and stored in Supabase like a normal VTN push would
+    const preview = responseText.substring(0, 250).replace(/\s+/g, ' ').trim();
+    oadrLog(`← HTTP ${res.status}: ${preview}`);
+
+    // ── 5. Detect what the worker returned ──
+    const isXml  = responseText.trimStart().startsWith('<');
+    const isJson = responseText.trimStart().startsWith('{') || responseText.trimStart().startsWith('[');
+
+    // Check for OpenADR event content anywhere in the response
+    const hasDistributeEvent = responseText.includes('oadrDistributeEvent') || responseText.includes('eiEvent');
+    const hasOadrResponse    = responseText.includes('oadrResponse');
+    const isEmptyPoll        = hasOadrResponse && !hasDistributeEvent;
+
+    let pollSuccess = false;
+    let hasEvent    = false;
+
+    if (isJson) {
+      // ── Worker returned JSON wrapper ──
+      try {
+        const data = JSON.parse(responseText);
+        // Accept any of: { success: true }, { ok: true }, HTTP 2xx with events
+        pollSuccess = data.success === true || data.ok === true || (res.ok && data.status >= 200 && data.status < 300);
+        hasEvent    = !!(data.has_event || data.hasEvent || data.event || (data.events && data.events.length > 0));
+
+        // If JSON wraps raw VTN XML in a field, check that too
+        const innerXml = data.body || data.response || data.xml || data.vtn_response || data.raw || '';
+        if (typeof innerXml === 'string' && innerXml.includes('oadrDistributeEvent')) {
+          hasEvent = true;
+          // Relay the inner XML to event ingest
+          try {
+            await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/event', {
+              method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: innerXml
+            });
+            oadrLog('Event XML relayed to /openadr/event for ingest');
+          } catch(relayErr) { oadrLog(`Event relay failed: ${relayErr.message}`); }
+        }
+
+        // If the worker says no event, that's still a successful poll
+        if (res.ok && !pollSuccess && !data.error) pollSuccess = true;
+
+        if (!pollSuccess && data.error) {
+          oadrLog(`Worker error: ${data.error}`);
+        }
+      } catch(e) {
+        oadrLog(`JSON parse failed: ${e.message}`);
+      }
+    } else if (isXml) {
+      // ── Worker returned raw VTN XML ──
+      pollSuccess = res.ok;
+      hasEvent    = hasDistributeEvent;
+
+      if (hasDistributeEvent) {
+        oadrLog('VTN returned oadrDistributeEvent — relaying to event ingest');
         try {
           await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/event', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/xml' },
-            body: responseText
+            method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: responseText
           });
-        } catch(e) { oadrLog(`Event ingest relay failed: ${e.message}`); }
-      } else if (noEvent) {
-        oadrLog(`Poll OK — VTN: no pending events (HTTP ${res.status})`);
-      } else {
-        oadrLog(`Poll response (HTTP ${res.status}): ${responseText.substring(0, 300)}`);
+          oadrLog('Event XML relayed to /openadr/event for ingest');
+        } catch(relayErr) { oadrLog(`Event relay failed: ${relayErr.message}`); }
+      } else if (isEmptyPoll) {
+        oadrLog('VTN: oadrResponse — no pending events');
+        pollSuccess = true;
       }
+    } else {
+      // ── Unknown format — treat HTTP 2xx as success ──
+      pollSuccess = res.ok;
     }
 
-    if (data.success) {
-      if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
+    // ── 6. Update UI ──
+    if (pollSuccess) {
+      if (badge) { badge.textContent = hasEvent ? '⚡ Event Received' : '✅ Connected'; badge.style.background = hasEvent ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = hasEvent ? 'var(--amber)' : 'var(--green-dark)'; }
       if (summaryBadge) { summaryBadge.textContent = '✅ Connected'; summaryBadge.style.background = 'var(--green-bg)'; summaryBadge.style.color = 'var(--green-dark)'; }
-      oadrLog(`Poll OK — HTTP ${data.status || res.status}${data.has_event ? ' — EVENT RECEIVED' : ' — no pending events'}`);
-      if (data.has_event) {
+      oadrLog(`Poll OK${hasEvent ? ' — EVENT RECEIVED' : ''}`);
+      if (hasEvent) {
         await loadOADREvents();
         await loadOADRSummaryCard();
       }
-    } else if (!data.raw) {
-      // JSON failure response from the worker (not raw XML already handled above)
-      const detail = data.error || data.message || `HTTP ${data.status || res.status}`;
+    } else {
       if (badge) { badge.textContent = '❌ Disconnected'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
       if (summaryBadge) { summaryBadge.textContent = '⚠ Poll Failed'; summaryBadge.style.background = 'rgba(245,158,11,0.1)'; summaryBadge.style.color = 'var(--amber)'; }
-      oadrLog(`Poll FAILED: ${detail}`);
+      oadrLog(`Poll FAILED — HTTP ${res.status}`);
     }
   } catch(e) {
     if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
