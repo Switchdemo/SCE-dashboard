@@ -582,7 +582,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
           <div style="text-align:center;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);">
             <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;margin-bottom:4px;">VEN ID</div>
-            <div style="font-size:13px;font-weight:700;font-family:monospace;" id="oadr-ven-id">E545300JH</div>
+            <div style="font-size:13px;font-weight:700;font-family:monospace;" id="oadr-ven-id-display">E545300JH</div>
           </div>
           <div style="text-align:center;padding:10px;background:var(--surface2);border-radius:var(--radius-sm);">
             <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;margin-bottom:4px;">Last Poll</div>
@@ -6902,6 +6902,9 @@ async function initOpenADRConfig() {
       const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
       set("oadr-vtn-id",      cfg.vtn_id);
       set("oadr-ven-id",      cfg.ven_id);
+      // Also update the summary card's VEN ID display element
+      const venDisplay = document.getElementById("oadr-ven-id-display");
+      if (venDisplay && cfg.ven_id) venDisplay.textContent = cfg.ven_id;
       set("oadr-vtn-url",     cfg.vtn_url);
       set("oadr-transport",   cfg.oadr_transport);
       set("oadr-reg-id",      cfg.oadr_reg_id);
@@ -7286,46 +7289,66 @@ async function oadrPollNow() {
   if (badge) { badge.textContent = '● Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
   oadrLog('Polling VTN…');
   try {
-    // Gather VEN/VTN config so the worker proxy knows what to poll
-    const venId       = document.getElementById('oadr-ven-id')?.value?.trim()       || '';
-    const vtnId       = document.getElementById('oadr-vtn-id')?.value?.trim()       || '';
-    const vtnUrl      = document.getElementById('oadr-vtn-url')?.value?.trim()      || '';
-    const regId       = document.getElementById('oadr-reg-id')?.value?.trim()       || '';
-    const transport   = document.getElementById('oadr-transport')?.value            || 'soap';
-    const authMode    = document.querySelector('.oadr-auth-btn.active')?.dataset?.mode || 'mtls';
-    const mtlsCertId  = document.getElementById('oadr-mtls-cert-id')?.value?.trim() || 'openadr-ven-cert';
+    // ── 1. Ensure the worker has current VEN/VTN config in Supabase ──
+    // Read config from the OpenADR form inputs (if available) and persist to
+    // Supabase so the worker can read them — same pattern as testVTNConnection.
+    const venIdEl   = document.getElementById('oadr-ven-id');
+    const vtnUrlEl  = document.getElementById('oadr-vtn-url');
+    const vtnIdEl   = document.getElementById('oadr-vtn-id');
+    const regIdEl   = document.getElementById('oadr-reg-id');
 
-    // If VEN / VTN config is not yet filled in, read from Supabase settings
-    let pollBody = { ven_id: venId, vtn_id: vtnId, vtn_url: vtnUrl, registration_id: regId, transport, auth_mode: authMode, mtls_cert_id: mtlsCertId };
-    if (!venId || !vtnUrl) {
-      try {
-        const rows = await supabaseGet("program_settings?setting_key=in.(vtn_url,vtn_id,ven_id,oadr_reg_id,oadr_transport,oadr_auth_mode,oadr_mtls_cert_id)");
-        if (Array.isArray(rows)) {
-          const cfg = {};
-          rows.forEach(r => { cfg[r.setting_key] = r.setting_value; });
-          pollBody.ven_id          = pollBody.ven_id          || cfg.ven_id          || '';
-          pollBody.vtn_id          = pollBody.vtn_id          || cfg.vtn_id          || '';
-          pollBody.vtn_url         = pollBody.vtn_url         || cfg.vtn_url         || '';
-          pollBody.registration_id = pollBody.registration_id || cfg.oadr_reg_id     || '';
-          pollBody.transport       = pollBody.transport       || cfg.oadr_transport  || 'soap';
-          pollBody.auth_mode       = pollBody.auth_mode       || cfg.oadr_auth_mode  || 'mtls';
-          pollBody.mtls_cert_id    = pollBody.mtls_cert_id    || cfg.oadr_mtls_cert_id || 'openadr-ven-cert';
-        }
-      } catch(e) { /* proceed with what we have */ }
+    // Only push config if the OpenADR tab inputs exist and have values.
+    // (On the Summary tab these inputs aren't in the DOM, but the worker
+    // already has the last-saved values in Supabase.)
+    if (venIdEl?.value && vtnUrlEl?.value) {
+      const authMode   = document.querySelector('.oadr-auth-btn.active')?.dataset?.mode || 'mtls';
+      const mtlsCertId = document.getElementById('oadr-mtls-cert-id')?.value?.trim() || 'openadr-ven-cert';
+      const pairs = {
+        ven_id:           venIdEl.value.trim(),
+        vtn_url:          vtnUrlEl.value.trim(),
+        vtn_id:           vtnIdEl?.value?.trim()  || '',
+        oadr_reg_id:      regIdEl?.value?.trim()   || '',
+        oadr_transport:   document.getElementById('oadr-transport')?.value || 'soap',
+        oadr_auth_mode:   authMode,
+        oadr_mtls_cert_id: mtlsCertId
+      };
+      // Upsert each setting — fire-and-forget; don't block the poll on DB writes
+      for (const [key, value] of Object.entries(pairs)) {
+        fetch(`${SUPABASE_URL}/rest/v1/program_settings`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify({ setting_key: key, setting_value: value })
+        }).catch(() => {});
+      }
+      // Small pause so the upserts land before the worker reads them
+      await new Promise(r => setTimeout(r, 300));
     }
 
+    // ── 2. Call the worker poll endpoint (worker reads config from Supabase) ──
     const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pollBody)
+      body: '{}'
     });
-    const data = await res.json();
-    const pollEl = document.getElementById('oadr-poll-status');
-    if (pollEl) pollEl.textContent = `Last poll: ${new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone })}`;
 
-    // Update summary card's last-poll timestamp too
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch(parseErr) {
+      // If the worker returned non-JSON (e.g. XML from the VTN), log it for debugging
+      oadrLog(`Poll response (HTTP ${res.status}): ${text.substring(0, 200)}`);
+      data = { success: res.ok, status: res.status, raw: text };
+    }
+
+    const pollEl = document.getElementById('oadr-poll-status');
+    const ts = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
+    if (pollEl) pollEl.textContent = `Last poll: ${ts}`;
     const summaryPoll = document.getElementById('oadr-last-poll');
-    if (summaryPoll) summaryPoll.textContent = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
+    if (summaryPoll) summaryPoll.textContent = ts;
 
     if (data.success) {
       if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
@@ -7336,9 +7359,11 @@ async function oadrPollNow() {
         await loadOADRSummaryCard();
       }
     } else {
+      // Include HTTP status and any response detail in the log for debugging
+      const detail = data.error || data.message || (data.raw ? `raw response (HTTP ${res.status})` : `HTTP ${res.status}`);
       if (badge) { badge.textContent = '❌ Disconnected'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
       if (summaryBadge) { summaryBadge.textContent = '⚠ Poll Failed'; summaryBadge.style.background = 'rgba(245,158,11,0.1)'; summaryBadge.style.color = 'var(--amber)'; }
-      oadrLog(`Poll FAILED: ${data.error || 'unknown'}`);
+      oadrLog(`Poll FAILED: ${detail}`);
     }
   } catch(e) {
     if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
