@@ -4010,6 +4010,20 @@ function viewDeviceHistory(uid) {
 
 // ── PROGRAM SUMMARY ──────────────────────────────────────────────────────────
 let summaryRefreshInterval = null;
+let _oadrPollerStarted = false;
+
+function startOADRPoller() {
+  if (_oadrPollerStarted) return;           // idempotent — safe to call multiple times
+  _oadrPollerStarted = true;
+
+  // Read the saved poll interval from the dropdown (defaults to 5 min)
+  const mins = parseInt(document.getElementById('oadr-poll-interval')?.value || '5');
+  oadrSetPollInterval(mins);
+
+  // Do an immediate first poll so the UI isn't stale until the interval fires
+  oadrPollNow();
+  console.log('[OpenADR] Poller started — interval', mins, 'min');
+}
 
 async function initSummaryTab() {
   await loadProgramSummary();
@@ -6874,7 +6888,8 @@ function initOADRTab() {
   initOpenADRConfig();
   loadOADREvents();
   oadrLoadDispatchConfig();
-  oadrSetPollInterval(document.getElementById('oadr-poll-interval')?.value || '5');
+  // Use startOADRPoller so the interval + initial poll aren't duplicated
+  startOADRPoller();
   selectOADRAuthMode('mtls', null, true);
 }
 
@@ -7267,23 +7282,67 @@ function oadrLog(msg) {
 
 async function oadrPollNow() {
   const badge = document.getElementById('oadr-status-badge');
+  const summaryBadge = document.getElementById('oadr-connection-badge');
   if (badge) { badge.textContent = '● Polling…'; badge.style.background = 'rgba(245,158,11,0.15)'; badge.style.color = 'var(--amber)'; }
   oadrLog('Polling VTN…');
   try {
-    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    // Gather VEN/VTN config so the worker proxy knows what to poll
+    const venId       = document.getElementById('oadr-ven-id')?.value?.trim()       || '';
+    const vtnId       = document.getElementById('oadr-vtn-id')?.value?.trim()       || '';
+    const vtnUrl      = document.getElementById('oadr-vtn-url')?.value?.trim()      || '';
+    const regId       = document.getElementById('oadr-reg-id')?.value?.trim()       || '';
+    const transport   = document.getElementById('oadr-transport')?.value            || 'soap';
+    const authMode    = document.querySelector('.oadr-auth-btn.active')?.dataset?.mode || 'mtls';
+    const mtlsCertId  = document.getElementById('oadr-mtls-cert-id')?.value?.trim() || 'openadr-ven-cert';
+
+    // If VEN / VTN config is not yet filled in, read from Supabase settings
+    let pollBody = { ven_id: venId, vtn_id: vtnId, vtn_url: vtnUrl, registration_id: regId, transport, auth_mode: authMode, mtls_cert_id: mtlsCertId };
+    if (!venId || !vtnUrl) {
+      try {
+        const rows = await supabaseGet("program_settings?setting_key=in.(vtn_url,vtn_id,ven_id,oadr_reg_id,oadr_transport,oadr_auth_mode,oadr_mtls_cert_id)");
+        if (Array.isArray(rows)) {
+          const cfg = {};
+          rows.forEach(r => { cfg[r.setting_key] = r.setting_value; });
+          pollBody.ven_id          = pollBody.ven_id          || cfg.ven_id          || '';
+          pollBody.vtn_id          = pollBody.vtn_id          || cfg.vtn_id          || '';
+          pollBody.vtn_url         = pollBody.vtn_url         || cfg.vtn_url         || '';
+          pollBody.registration_id = pollBody.registration_id || cfg.oadr_reg_id     || '';
+          pollBody.transport       = pollBody.transport       || cfg.oadr_transport  || 'soap';
+          pollBody.auth_mode       = pollBody.auth_mode       || cfg.oadr_auth_mode  || 'mtls';
+          pollBody.mtls_cert_id    = pollBody.mtls_cert_id    || cfg.oadr_mtls_cert_id || 'openadr-ven-cert';
+        }
+      } catch(e) { /* proceed with what we have */ }
+    }
+
+    const res  = await fetch(PROXY_URL.replace(/\/$/, '') + '/openadr/poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pollBody)
+    });
     const data = await res.json();
     const pollEl = document.getElementById('oadr-poll-status');
     if (pollEl) pollEl.textContent = `Last poll: ${new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone })}`;
+
+    // Update summary card's last-poll timestamp too
+    const summaryPoll = document.getElementById('oadr-last-poll');
+    if (summaryPoll) summaryPoll.textContent = new Date().toLocaleTimeString("en-US", { timeZone: globalTimezone });
+
     if (data.success) {
       if (badge) { badge.textContent = data.has_event ? '⚡ Event Received' : '✅ Connected'; badge.style.background = data.has_event ? 'rgba(245,158,11,0.15)' : 'var(--green-bg)'; badge.style.color = data.has_event ? 'var(--amber)' : 'var(--green-dark)'; }
-      oadrLog(`Poll OK — HTTP ${data.status}${data.has_event ? ' — EVENT RECEIVED' : ' — no pending events'}`);
-      if (data.has_event) { await loadOADREvents(); }
+      if (summaryBadge) { summaryBadge.textContent = '✅ Connected'; summaryBadge.style.background = 'var(--green-bg)'; summaryBadge.style.color = 'var(--green-dark)'; }
+      oadrLog(`Poll OK — HTTP ${data.status || res.status}${data.has_event ? ' — EVENT RECEIVED' : ' — no pending events'}`);
+      if (data.has_event) {
+        await loadOADREvents();
+        await loadOADRSummaryCard();
+      }
     } else {
       if (badge) { badge.textContent = '❌ Disconnected'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+      if (summaryBadge) { summaryBadge.textContent = '⚠ Poll Failed'; summaryBadge.style.background = 'rgba(245,158,11,0.1)'; summaryBadge.style.color = 'var(--amber)'; }
       oadrLog(`Poll FAILED: ${data.error || 'unknown'}`);
     }
   } catch(e) {
     if (badge) { badge.textContent = '❌ Error'; badge.style.background = '#FEF2F2'; badge.style.color = 'var(--red)'; }
+    if (summaryBadge) { summaryBadge.textContent = '⚠ Error'; summaryBadge.style.background = '#FEF2F2'; summaryBadge.style.color = 'var(--red)'; }
     oadrLog(`Poll ERROR: ${e.message}`);
   }
 }
@@ -7291,8 +7350,12 @@ async function oadrPollNow() {
 function oadrSetPollInterval(mins) {
   if (_oadrPollInterval) { clearInterval(_oadrPollInterval); _oadrPollInterval = null; }
   const m = parseInt(mins);
-  if (m > 0) { _oadrPollInterval = setInterval(oadrPollNow, m * 60 * 1000); oadrLog(`Auto-poll every ${m}min`); }
-  else oadrLog('Auto-poll disabled');
+  if (m > 0) {
+    _oadrPollInterval = setInterval(oadrPollNow, m * 60 * 1000);
+    oadrLog(`Auto-poll every ${m}min`);
+  } else {
+    oadrLog('Auto-poll disabled');
+  }
 }
 
 async function oadrRegister() {
